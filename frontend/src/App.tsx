@@ -241,14 +241,20 @@ function App() {
 
     let cancelled = false
 
-    setSession((current) => ({
-      ...current,
-      jobs: current.jobs.map((job) =>
-        job.id === nextJob.id
-          ? { ...job, status: 'dispatching', helperMessage: 'Sending bark chunk to the local helper…' }
-          : job,
-      ),
-    }))
+    queueMicrotask(() => {
+      if (cancelled) {
+        return
+      }
+
+      setSession((current) => ({
+        ...current,
+        jobs: current.jobs.map((job) =>
+          job.id === nextJob.id
+            ? { ...job, status: 'dispatching', helperMessage: 'Sending bark chunk to the local helper…' }
+            : job,
+        ),
+      }))
+    })
 
     void dispatchQueuedJob({
       providerId: selectedProviderId,
