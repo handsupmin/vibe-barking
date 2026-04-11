@@ -19,7 +19,7 @@ test("createApp exposes helper metadata without leaking secrets", async () => {
 			};
 		},
 		async validate() {
-			return { ok: true, message: "ready" };
+			return { ok: true, provider: "openai", message: "ready" };
 		},
 		async generate() {
 			return {
