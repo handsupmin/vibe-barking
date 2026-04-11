@@ -12,6 +12,7 @@ That means the runnable product tests still need to be wired into those packages
 ## Verification artifacts in this lane
 
 - `scripts/provider-env-check.mjs` — local readiness check for provider env vars and Codex CLI availability
+- `scripts/generate-chaos-input.mjs` — deterministic multilingual alphanumeric input generator for sustained smoke checks
 - `verification/contracts/guarded-input.json` — expected guarded-input acceptance/rejection cases
 - `verification/contracts/queue-chunking.json` — expected 20-character batching behavior
 - `verification/contracts/provider-validation.json` — provider validation and Codex-policy contract
@@ -65,8 +66,13 @@ After the feature lanes merge into one worktree:
 1. Start the helper and frontend locally.
 2. Run `node scripts/provider-env-check.mjs --provider all`.
 3. Validate each provider individually from the helper UI/API.
-4. Paste or type a long alphanumeric multilingual string.
-5. Confirm every 20 accepted characters produces one queued job.
-6. Confirm queue rows progress through `queued`, `processing`, and terminal states.
-7. Confirm the preview uses an isolated iframe and cannot navigate or mutate the parent app shell.
+4. Generate a long deterministic chaos string:
 
+   ```bash
+   node scripts/generate-chaos-input.mjs --length 240 --seed 7
+   ```
+
+5. Paste or type that alphanumeric multilingual string.
+6. Confirm every 20 accepted characters produces one queued job.
+7. Confirm queue rows progress through `queued`, `processing`, and terminal states.
+8. Confirm the preview uses an isolated iframe and cannot navigate or mutate the parent app shell.
