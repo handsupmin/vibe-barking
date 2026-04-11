@@ -141,7 +141,10 @@ export async function handleNodeRequest(
 		body?: Uint8Array;
 	},
 ): Promise<Response> {
-	const body = input.body && input.body.byteLength > 0 ? new Blob([input.body]) : undefined;
+	const body =
+		input.body && input.body.byteLength > 0
+			? Buffer.from(input.body)
+			: undefined;
 
 	const request = new Request(input.url, {
 		method: input.method,
