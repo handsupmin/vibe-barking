@@ -42,6 +42,6 @@ test('createApp exposes helper metadata without leaking secrets', async () => {
   assert.equal(response.status, 200);
   assert.equal(body.providers[0].provider, 'openai');
   assert.equal(body.providers[0].configured, true);
-  assert.equal(JSON.stringify(body), JSON.stringify(body).includes('OPENAI_API_KEY=') ? true : false, false);
+  assert.ok(!JSON.stringify(body).includes('OPENAI_API_KEY='));
   assert.deepEqual(body.categories, ['landing-page', 'dashboard', 'widget', 'playground']);
 });
