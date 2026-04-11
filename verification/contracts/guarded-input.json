@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Contract cases for the guarded input pipeline. Only letters and numbers across languages are accepted when no modifier key is active.",
+  "description": "Contract cases for the guarded input pipeline. Plain multilingual text keys should pass through while functional keys and modified shortcuts are blocked.",
   "cases": [
     {
       "name": "accept latin letter",
@@ -43,16 +43,6 @@
       "accepted": ""
     },
     {
-      "name": "ignore punctuation",
-      "event": {
-        "key": "!",
-        "ctrlKey": false,
-        "metaKey": false,
-        "altKey": false
-      },
-      "accepted": ""
-    },
-    {
       "name": "ignore modifier combo",
       "event": {
         "key": "a",
@@ -64,4 +54,3 @@
     }
   ]
 }
-

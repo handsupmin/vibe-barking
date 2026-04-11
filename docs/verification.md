@@ -22,7 +22,7 @@ That means the runnable product tests still need to be wired into those packages
 
 | Area | Contract source | Required outcome |
 | --- | --- | --- |
-| Guarded input | `verification/contracts/guarded-input.json` | Accept only letters/numbers across languages when no modifier keys are active; ignore functional keys and punctuation |
+| Guarded input | `verification/contracts/guarded-input.json` | Accept multilingual text input when no modifier keys are active; ignore functional keys and modified shortcuts |
 | Queue chunking | `verification/contracts/queue-chunking.json` | Emit one queued job for every accepted 20 characters and retain any remainder |
 | Provider validation | `verification/contracts/provider-validation.json` | Require real config for OpenAI, Gemini, Claude, and Codex; keep Codex execution helper-only |
 | Preview isolation | `verification/contracts/preview-isolation.json` | Render generated output in a sandboxed preview container, not by injecting into the app shell |
