@@ -33,6 +33,16 @@
       "accepted": "٤"
     },
     {
+      "name": "accept punctuation text key",
+      "event": {
+        "key": "!",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": "!"
+    },
+    {
       "name": "ignore functional key",
       "event": {
         "key": "Enter",
