@@ -39,7 +39,7 @@ describe('applyTextToQueue', () => {
       'defghijklmnopqrstuvwxyz123',
     )
 
-    expect(result.pendingBuffer).toBe('wxyz123')
+    expect(result.pendingBuffer).toBe('uvwxyz123')
     expect(result.queue).toHaveLength(1)
     expect(result.queue[0].chunk).toBe('abcdefghijklmnopqrst')
     expect(result.transcript).toBe('abcdefghijklmnopqrstuvwxyz123')
