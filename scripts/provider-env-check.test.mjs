@@ -5,16 +5,18 @@ import {
   evaluateProvider,
   evaluateProviders,
   parseProviders,
+  resolveClaudeCodeBinary,
   resolveCodexBinary,
 } from './provider-env-check.mjs'
 
 test('parseProviders expands all providers by default', () => {
-  assert.deepEqual(parseProviders([]), ['openai', 'gemini', 'claude', 'codex'])
+  assert.deepEqual(parseProviders([]), ['openai', 'gemini', 'claude', 'claude-code', 'codex'])
 })
 
 test('parseProviders accepts comma-delimited values', () => {
-  assert.deepEqual(parseProviders(['--provider', 'openai, codex']), [
+  assert.deepEqual(parseProviders(['--provider', 'openai, claude-code, codex']), [
     'openai',
+    'claude-code',
     'codex',
   ])
 })
@@ -24,6 +26,10 @@ test('resolveCodexBinary respects explicit overrides', () => {
   assert.equal(
     resolveCodexBinary({ CODEX_CLI_PATH: '/tmp/other-codex' }),
     '/tmp/other-codex',
+  )
+  assert.equal(
+    resolveClaudeCodeBinary({ CLAUDE_CODE_CLI_PATH: '/tmp/claude' }),
+    '/tmp/claude',
   )
 })
 
@@ -43,6 +49,22 @@ test('gemini accepts either GEMINI_API_KEY or GOOGLE_API_KEY', () => {
   assert.equal(gemini.status, 'ready')
 })
 
+
+test('claude-code reports manual when binary exists without API key', () => {
+  const claudeCode = evaluateProvider('claude-code', {}, { commandExists: () => true })
+  assert.equal(claudeCode.status, 'manual')
+})
+
+test('claude-code reports ready when binary and ANTHROPIC_API_KEY are present', () => {
+  const claudeCode = evaluateProvider(
+    'claude-code',
+    { ANTHROPIC_API_KEY: 'set' },
+    { commandExists: () => true },
+  )
+
+  assert.equal(claudeCode.status, 'ready')
+})
+
 test('codex reports manual when binary exists but env auth is absent', () => {
   const codex = evaluateProvider('codex', {}, { commandExists: () => true })
   assert.equal(codex.status, 'manual')
@@ -60,14 +82,13 @@ test('codex reports ready when binary and OPENAI_API_KEY are present', () => {
 
 test('evaluateProviders preserves provider order', () => {
   const results = evaluateProviders(
-    ['claude', 'codex'],
+    ['claude', 'claude-code', 'codex'],
     { ANTHROPIC_API_KEY: 'set' },
     { commandExists: () => true },
   )
 
   assert.deepEqual(
     results.map((result) => result.provider),
-    ['claude', 'codex'],
+    ['claude', 'claude-code', 'codex'],
   )
 })
-

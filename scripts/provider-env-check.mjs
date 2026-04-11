@@ -12,6 +12,10 @@ export const providerSpecs = {
   claude: {
     requiredAny: ['ANTHROPIC_API_KEY'],
   },
+  'claude-code': {
+    binaryEnv: ['CLAUDE_CODE_BIN', 'CLAUDE_CODE_CLI_PATH'],
+    optionalAny: ['ANTHROPIC_API_KEY'],
+  },
   codex: {
     binaryEnv: ['CODEX_BIN', 'CODEX_CLI_PATH'],
     optionalAny: ['OPENAI_API_KEY'],
@@ -40,6 +44,10 @@ export function resolveCodexBinary(env = process.env) {
   return env.CODEX_BIN || env.CODEX_CLI_PATH || 'codex'
 }
 
+export function resolveClaudeCodeBinary(env = process.env) {
+  return env.CLAUDE_CODE_BIN || env.CLAUDE_CODE_CLI_PATH || 'claude'
+}
+
 export function commandExists(command) {
   const result = spawnSync(command, ['--version'], {
     stdio: 'ignore',
@@ -61,8 +69,9 @@ export function evaluateProvider(
     throw new Error(`Unsupported provider: ${provider}`)
   }
 
-  if (provider === 'codex') {
-    const binary = resolveCodexBinary(env)
+  if (provider === 'codex' || provider === 'claude-code') {
+    const binary =
+      provider === 'codex' ? resolveCodexBinary(env) : resolveClaudeCodeBinary(env)
     const binaryAvailable = options.commandExists(binary)
 
     if (!binaryAvailable) {
@@ -76,11 +85,14 @@ export function evaluateProvider(
       }
     }
 
-    if (hasAnyEnv(env, providerSpecs.codex.optionalAny)) {
+    if (hasAnyEnv(env, providerSpecs[provider].optionalAny)) {
       return {
         provider,
         status: 'ready',
-        summary: 'Codex CLI binary found and OPENAI_API_KEY is set',
+        summary:
+          provider === 'codex'
+            ? 'Codex CLI binary found and OPENAI_API_KEY is set'
+            : 'Claude Code CLI binary found and ANTHROPIC_API_KEY is set',
         details: [`Binary: ${binary}`],
       }
     }
@@ -88,10 +100,15 @@ export function evaluateProvider(
     return {
       provider,
       status: 'manual',
-      summary: 'Codex CLI binary found, but auth must be verified manually',
+      summary:
+        provider === 'codex'
+          ? 'Codex CLI binary found, but auth must be verified manually'
+          : 'Claude Code CLI binary found, but auth must be verified manually',
       details: [
         `Binary: ${binary}`,
-        'Confirm helper-side validation succeeds on a machine with Codex CLI already authenticated, or export OPENAI_API_KEY before running end-to-end validation.',
+        provider === 'codex'
+          ? 'Confirm helper-side validation succeeds on a machine with Codex CLI already authenticated, or export OPENAI_API_KEY before running end-to-end validation.'
+          : 'Confirm helper-side validation succeeds on a machine with Claude Code already authenticated, or export ANTHROPIC_API_KEY before running end-to-end validation.',
       ],
     }
   }
@@ -153,4 +170,3 @@ if (isMainModule(import.meta.url)) {
   const hasMissing = results.some((result) => result.status === 'missing')
   process.exit(hasMissing ? 1 : 0)
 }
-

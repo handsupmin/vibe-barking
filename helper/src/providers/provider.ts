@@ -9,7 +9,11 @@ export interface ProviderAdapter {
 	id: ProviderConfigSummary["provider"];
 	displayName: string;
 	configSummary(): ProviderConfigSummary;
-	validate(input?: { model?: string }): Promise<ProviderValidationResult>;
+	validate(input?: {
+		model?: string;
+		secret?: string;
+		command?: string;
+	}): Promise<ProviderValidationResult>;
 	generate(
 		request: ProviderGenerationRequest,
 	): Promise<ProviderGenerationResult>;

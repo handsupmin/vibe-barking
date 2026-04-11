@@ -1,4 +1,5 @@
 import type {
+  HelperMetaResponse,
   ProviderValidationRequest,
   ProviderValidationResult,
   QueueDispatchRequest,
@@ -31,6 +32,8 @@ export async function validateProvider(
     const message =
       typeof payload?.message === 'string'
         ? payload.message
+        : typeof payload?.error === 'string'
+          ? payload.error
         : response.ok
           ? 'Provider validated by local helper.'
           : `Validation failed with status ${response.status}.`
@@ -52,6 +55,19 @@ export async function validateProvider(
   }
 }
 
+export async function fetchHelperMeta(): Promise<HelperMetaResponse | null> {
+  try {
+    const response = await fetch('/api/meta')
+    if (!response.ok) {
+      return null
+    }
+
+    return (await response.json()) as HelperMetaResponse
+  } catch {
+    return null
+  }
+}
+
 export async function dispatchQueuedJob(
   request: QueueDispatchRequest,
 ): Promise<QueueDispatchResponse> {
@@ -65,30 +81,47 @@ export async function dispatchQueuedJob(
     })
 
     const payload = await readJsonSafe(response)
+    const remoteJob =
+      payload && typeof payload.job === 'object' && payload.job !== null
+        ? (payload.job as Record<string, unknown>)
+        : null
+    const remoteJobId =
+      typeof remoteJob?.id === 'string'
+        ? remoteJob.id
+        : typeof payload?.remoteJobId === 'string'
+          ? payload.remoteJobId
+          : undefined
+    const remoteStatus =
+      typeof remoteJob?.status === 'string'
+        ? remoteJob.status
+        : typeof payload?.status === 'string'
+          ? payload.status
+          : undefined
 
     return {
       accepted: response.ok,
       helperAvailable: response.ok,
       jobId: request.jobId,
-      remoteJobId:
-        typeof payload?.remoteJobId === 'string' ? payload.remoteJobId : undefined,
+      remoteJobId,
       status:
-        response.ok && typeof payload?.status === 'string'
-          ? (payload.status as QueueDispatchResponse['status'])
+        response.ok && typeof remoteStatus === 'string'
+          ? (remoteStatus as QueueDispatchResponse['status'])
           : response.ok
-            ? 'completed'
+            ? 'queued'
             : 'failed',
       summary:
         typeof payload?.summary === 'string'
           ? payload.summary
           : response.ok
-            ? 'Helper accepted the bark chunk.'
+            ? 'Helper accepted the bark chunk and queued it for processing.'
             : undefined,
       previewHtml:
         typeof payload?.previewHtml === 'string' ? payload.previewHtml : undefined,
       message:
         typeof payload?.message === 'string'
           ? payload.message
+          : typeof payload?.error === 'string'
+            ? payload.error
           : response.ok
             ? 'Helper accepted the bark chunk.'
             : `Helper rejected the bark chunk with status ${response.status}.`,

@@ -1,11 +1,17 @@
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 
 import { createApp, handleNodeRequest } from "./app.ts";
+import { loadHelperRuntimeEnv } from "./config/env-store.ts";
 
-const host = process.env.HELPER_HOST ?? "127.0.0.1";
-const port = Number(process.env.HELPER_PORT ?? "4318");
-
-const app = createApp();
+const helperRoot = fileURLToPath(new URL("..", import.meta.url));
+const runtimeEnv = loadHelperRuntimeEnv({
+	cwd: helperRoot,
+	baseEnv: process.env,
+});
+const app = createApp({ cwd: helperRoot, env: runtimeEnv });
+const host = runtimeEnv.HELPER_HOST ?? "127.0.0.1";
+const port = Number(runtimeEnv.HELPER_PORT ?? "4318");
 
 const server = createServer(async (req, res) => {
 	const chunks: Buffer[] = [];

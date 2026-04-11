@@ -1,10 +1,11 @@
 export const CHUNK_SIZE = 20
 
-export type ProviderId = 'openai' | 'gemini' | 'claude' | 'codex'
+export type ProviderId = 'openai' | 'gemini' | 'claude' | 'claude-code' | 'codex'
 export type ProviderHealth = 'idle' | 'validating' | 'ready' | 'error'
 export type QueueJobStatus =
   | 'queued'
   | 'dispatching'
+  | 'processing'
   | 'waiting-for-helper'
   | 'completed'
   | 'failed'
@@ -39,16 +40,34 @@ export interface ProviderValidationResult {
   message: string
 }
 
+export interface ProviderMetaSummary {
+  provider: ProviderId
+  displayName: string
+  configured: boolean
+  missing: string[]
+  requiresCli: boolean
+  envVars: string[]
+  details?: Record<string, string | boolean | number | null>
+}
+
+export interface HelperMetaResponse {
+  providers: ProviderMetaSummary[]
+  categories: string[]
+  providerIds: ProviderId[]
+}
+
 export interface QueueJob {
   id: string
   chunk: string
   createdAt: string
   providerId: ProviderId
+  model?: string
   status: QueueJobStatus
   remoteJobId?: string
   resultSummary?: string
   previewHtml?: string
   helperMessage?: string
+  error?: string
 }
 
 export interface QueueDispatchRequest {
@@ -98,6 +117,15 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     defaultModel: 'claude-sonnet-4-5',
   },
   {
+    id: 'claude-code',
+    label: 'Claude Code CLI',
+    summary: 'Local Claude Code lane for machines already authenticated with the Claude CLI.',
+    transport: 'cli',
+    secretLabel: 'CLI command',
+    envHint: 'PATH -> claude',
+    defaultModel: 'sonnet',
+  },
+  {
     id: 'codex',
     label: 'Codex CLI',
     summary: 'Local command runner for developers who want the parody to stay on their machine.',
@@ -127,6 +155,11 @@ export const INITIAL_PROVIDER_DRAFTS: Record<ProviderId, ProviderDraft> = {
     secret: '',
     model: PROVIDER_MAP.claude.defaultModel,
     command: '',
+  },
+  'claude-code': {
+    secret: 'claude',
+    model: PROVIDER_MAP['claude-code'].defaultModel,
+    command: 'claude',
   },
   codex: {
     secret: 'codex',

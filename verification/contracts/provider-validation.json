@@ -22,6 +22,18 @@
       ]
     },
     {
+      "name": "claude-code",
+      "requiredBinaryEnv": [
+        "CLAUDE_CODE_BIN",
+        "CLAUDE_CODE_CLI_PATH"
+      ],
+      "clientMayProvideCommand": false,
+      "notes": [
+        "Claude Code execution must stay helper-only.",
+        "Browser clients may choose the provider, but not an arbitrary shell command or argv."
+      ]
+    },
+    {
       "name": "codex",
       "requiredBinaryEnv": [
         "CODEX_BIN",
@@ -35,4 +47,3 @@
     }
   ]
 }
-

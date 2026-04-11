@@ -17,23 +17,31 @@ export function createGeminiProvider({
 }: GeminiProviderOptions = {}): ProviderAdapter {
 	const displayName = "Gemini";
 
-	return {
-		id: "gemini",
-		displayName,
-		configSummary() {
-			const missing = requiredEnv(env, ["GEMINI_API_KEY", "GEMINI_MODEL"]);
+		return {
+			id: "gemini",
+			displayName,
+			configSummary() {
+				const missing = requiredGeminiEnv(
+					env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY,
+					env.GEMINI_MODEL,
+				);
 			return {
 				provider: "gemini",
 				displayName,
 				configured: missing.length === 0,
 				missing,
 				requiresCli: false,
-				envVars: ["GEMINI_API_KEY", "GEMINI_MODEL"],
+				envVars: ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_MODEL"],
 			};
-		},
-		async validate(input) {
-			return validateGemini({ env, fetchFn, model: input?.model });
-		},
+			},
+			async validate(input) {
+				return validateGemini({
+					env,
+					fetchFn,
+					model: input?.model,
+					secret: input?.secret,
+				});
+			},
 		async generate(request) {
 			return generateGemini({ env, fetchFn, request });
 		},
@@ -44,16 +52,16 @@ async function validateGemini({
 	env,
 	fetchFn,
 	model,
+	secret,
 }: {
 	env: NodeJS.ProcessEnv;
 	fetchFn: typeof fetch;
 	model?: string;
+	secret?: string;
 }): Promise<ProviderValidationResult> {
 	const effectiveModel = model ?? env.GEMINI_MODEL;
-	const missing = requiredEnv({ ...env, GEMINI_MODEL: effectiveModel }, [
-		"GEMINI_API_KEY",
-		"GEMINI_MODEL",
-	]);
+	const apiKey = secret?.trim() || env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+	const missing = requiredGeminiEnv(apiKey, effectiveModel);
 	if (missing.length > 0) {
 		return {
 			ok: false,
@@ -63,7 +71,6 @@ async function validateGemini({
 		};
 	}
 
-	const apiKey = env.GEMINI_API_KEY;
 	if (!apiKey || !effectiveModel) {
 		return {
 			ok: false,
@@ -117,15 +124,15 @@ async function generateGemini({
 	request: ProviderGenerationRequest;
 }): Promise<ProviderGenerationResult> {
 	const effectiveModel = request.model ?? env.GEMINI_MODEL;
-	const missing = requiredEnv({ ...env, GEMINI_MODEL: effectiveModel }, [
-		"GEMINI_API_KEY",
-		"GEMINI_MODEL",
-	]);
+	const missing = requiredGeminiEnv(
+		env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY,
+		effectiveModel,
+	);
 	if (missing.length > 0) {
 		throw new Error(`Missing ${missing.join(", ")}`);
 	}
 
-	const apiKey = env.GEMINI_API_KEY;
+	const apiKey = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY;
 	if (!apiKey || !effectiveModel) {
 		throw new Error("Gemini is not configured.");
 	}
@@ -202,8 +209,21 @@ function extractErrorMessage(payload: unknown): string {
 	);
 }
 
-function requiredEnv(env: NodeJS.ProcessEnv, keys: string[]): string[] {
-	return keys.filter((key) => !env[key]);
+function requiredGeminiEnv(
+	apiKey: string | undefined,
+	effectiveModel?: string,
+): string[] {
+	const missing: string[] = [];
+
+	if (!apiKey) {
+		missing.push("GEMINI_API_KEY or GOOGLE_API_KEY");
+	}
+
+	if (!effectiveModel) {
+		missing.push("GEMINI_MODEL");
+	}
+
+	return missing;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

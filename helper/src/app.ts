@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from "node:http";
+import { loadHelperRuntimeEnv, persistProviderConfig } from "./config/env-store.ts";
 import { createProviders } from "./providers/index.ts";
 import type { ProviderAdapter } from "./providers/provider.ts";
 import { JobQueue } from "./queue/job-queue.ts";
@@ -21,11 +22,13 @@ interface CreateAppOptions {
 export function createApp({
 	providers,
 	queue,
-	env = process.env,
 	fetchFn = fetch,
 	cwd = process.cwd(),
+	env,
 }: CreateAppOptions = {}) {
-	const registry = providers ?? createProviders({ env, fetchFn, cwd });
+	const runtimeEnv = env ?? loadHelperRuntimeEnv({ cwd, baseEnv: process.env });
+	const registry =
+		providers ?? createProviders({ env: runtimeEnv, fetchFn, cwd });
 	const providerMap = new Map(
 		registry.map((provider) => [provider.id, provider]),
 	);
@@ -71,27 +74,47 @@ export function createApp({
 				request.method === "POST" &&
 				url.pathname === "/api/providers/validate"
 			) {
-				const body = await readJson<{ provider?: string; model?: string }>(
-					request,
-				);
-				if (!body.provider || !isProviderId(body.provider)) {
+				const body = await readJson<{
+					providerId?: string;
+					provider?: string;
+					model?: string;
+					secret?: string;
+					command?: string;
+				}>(request);
+				const providerId = body.providerId ?? body.provider;
+				if (!providerId || !isProviderId(providerId)) {
 					return json({ error: "Unknown provider." }, { status: 400 });
 				}
 
-				const provider = providerMap.get(body.provider);
+				const provider = providerMap.get(providerId);
 				if (!provider) {
 					return json({ error: "Unknown provider." }, { status: 400 });
 				}
 
 				const result = await provider.validate({
 					model: body.model,
+					secret: body.secret,
+					command: body.command,
 				});
+
+				if (result.ok) {
+					await persistProviderConfig({
+						cwd,
+						env: runtimeEnv,
+						providerId,
+						secret: body.secret,
+						model: body.model,
+						command: body.command,
+					});
+				}
+
 				return json(result, { status: result.ok ? 200 : 400 });
 			}
 
 			if (request.method === "POST" && url.pathname === "/api/jobs") {
-				const body = await readJson<QueueEnqueueInput>(request);
-				if (!body.provider || !isProviderId(body.provider)) {
+				const body = await readJson<QueueEnqueueInput & { providerId?: string }>(request);
+				const providerId = body.providerId ?? body.provider;
+				if (!providerId || !isProviderId(providerId)) {
 					return json({ error: "Unknown provider." }, { status: 400 });
 				}
 
@@ -104,7 +127,7 @@ export function createApp({
 				}
 
 				const job = jobQueue.enqueue({
-					provider: body.provider,
+					provider: providerId,
 					chunk: body.chunk,
 					category: body.category,
 					model: body.model,

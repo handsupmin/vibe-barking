@@ -17,11 +17,11 @@ export function createOpenAIProvider({
 }: OpenAIProviderOptions = {}): ProviderAdapter {
 	const displayName = "OpenAI";
 
-	return {
+		return {
 		id: "openai",
 		displayName,
 		configSummary() {
-			const missing = requiredEnv(env, ["OPENAI_API_KEY", "OPENAI_MODEL"]);
+			const missing = requiredEnv(env, ["OPENAI_API_KEY"]);
 			return {
 				provider: "openai",
 				displayName,
@@ -31,9 +31,14 @@ export function createOpenAIProvider({
 				envVars: ["OPENAI_API_KEY", "OPENAI_MODEL"],
 			};
 		},
-		async validate(input) {
-			return validateOpenAI({ env, fetchFn, model: input?.model });
-		},
+			async validate(input) {
+				return validateOpenAI({
+					env,
+					fetchFn,
+					model: input?.model,
+					secret: input?.secret,
+				});
+			},
 		async generate(request) {
 			return generateOpenAI({ env, fetchFn, request });
 		},
@@ -44,13 +49,16 @@ async function validateOpenAI({
 	env,
 	fetchFn,
 	model,
+	secret,
 }: {
 	env: NodeJS.ProcessEnv;
 	fetchFn: typeof fetch;
 	model?: string;
+	secret?: string;
 }): Promise<ProviderValidationResult> {
 	const effectiveModel = model ?? env.OPENAI_MODEL;
-	const missing = requiredEnv({ ...env, OPENAI_MODEL: effectiveModel }, [
+	const apiKey = secret?.trim() || env.OPENAI_API_KEY;
+	const missing = requiredEnv({ ...env, OPENAI_API_KEY: apiKey, OPENAI_MODEL: effectiveModel }, [
 		"OPENAI_API_KEY",
 		"OPENAI_MODEL",
 	]);
@@ -63,7 +71,6 @@ async function validateOpenAI({
 		};
 	}
 
-	const apiKey = env.OPENAI_API_KEY;
 	if (!apiKey || !effectiveModel) {
 		return {
 			ok: false,

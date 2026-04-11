@@ -1,0 +1,8 @@
+{
+  "name": "vibe-barking",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-all.mjs",
+    "verify": "node scripts/verify-all.mjs"
+  }
+}

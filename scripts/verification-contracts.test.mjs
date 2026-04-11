@@ -33,10 +33,15 @@ test('provider validation contract lists all required providers', () => {
   const contract = readContract('provider-validation.json')
   const names = contract.providers.map((provider) => provider.name)
 
-  assert.deepEqual(names, ['openai', 'gemini', 'claude', 'codex'])
+  assert.deepEqual(names, ['openai', 'gemini', 'claude', 'claude-code', 'codex'])
 
   const codex = contract.providers.find((provider) => provider.name === 'codex')
   assert.equal(codex.clientMayProvideCommand, false)
+
+  const claudeCode = contract.providers.find(
+    (provider) => provider.name === 'claude-code',
+  )
+  assert.equal(claudeCode.clientMayProvideCommand, false)
 })
 
 test('preview isolation contract forbids unsafe iframe capabilities', () => {
@@ -46,4 +51,3 @@ test('preview isolation contract forbids unsafe iframe capabilities', () => {
   assert.ok(contract.forbiddenSandboxTokens.includes('allow-same-origin'))
   assert.ok(contract.forbiddenSandboxTokens.includes('allow-top-navigation'))
 })
-

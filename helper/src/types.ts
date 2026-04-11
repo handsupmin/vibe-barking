@@ -2,6 +2,7 @@ export const SUPPORTED_PROVIDERS = [
 	"openai",
 	"gemini",
 	"claude",
+	"claude-code",
 	"codex",
 ] as const;
 export type ProviderId = (typeof SUPPORTED_PROVIDERS)[number];
@@ -89,6 +90,7 @@ export interface ProviderConfigSummary {
 	missing: string[];
 	requiresCli: boolean;
 	envVars: string[];
+	details?: Record<string, string | boolean | number | null>;
 }
 
 export interface ProviderValidationResult {

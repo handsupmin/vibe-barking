@@ -27,17 +27,26 @@ export function createCodexCliProvider({
 		id: "codex",
 		displayName,
 		configSummary() {
+			const command = env.CODEX_CLI_PATH ?? env.CODEX_BIN;
 			return {
 				provider: "codex",
 				displayName,
-				configured: isSafeCodexPath(env.CODEX_CLI_PATH ?? "codex"),
-				missing: [],
+				configured: typeof command === "string" && isSafeCodexPath(command),
+				missing: command ? [] : ["CODEX_CLI_PATH or CODEX_BIN"],
 				requiresCli: true,
 				envVars: ["CODEX_CLI_PATH", "CODEX_MODEL"],
+				details: {
+					command: command ?? null,
+				},
 			};
 		},
 		async validate(input) {
-			return validateCodex({ env, cwd, model: input?.model });
+			return validateCodex({
+				env,
+				cwd,
+				model: input?.model,
+				command: input?.command,
+			});
 		},
 		async generate(request) {
 			return generateCodex({ env, cwd, request });
@@ -49,16 +58,18 @@ async function validateCodex({
 	env,
 	cwd,
 	model,
+	command,
 }: {
 	env: NodeJS.ProcessEnv;
 	cwd: string;
 	model?: string;
+	command?: string;
 }): Promise<ProviderValidationResult> {
 	try {
 		const outputText = await runCodexPrompt({
 			prompt: "Reply with READY and nothing else.",
 			cwd,
-			codexPath: env.CODEX_CLI_PATH,
+			codexPath: command?.trim() || env.CODEX_CLI_PATH || env.CODEX_BIN,
 			model: model ?? env.CODEX_MODEL,
 		});
 

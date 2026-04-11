@@ -1,3 +1,5 @@
+import { assertSafeExecutablePath } from "./executable-path.ts";
+
 export interface CodexCommand {
 	command: string;
 	args: string[];
@@ -9,16 +11,12 @@ interface BuildCodexCommandInput {
 	outputFile?: string;
 }
 
-const SAFE_EXECUTABLE = /^[A-Za-z0-9_./:-]+$/;
-
 export function buildCodexCommand({
 	codexPath = "codex",
 	model,
 	outputFile = "__CODEX_OUTPUT__",
 }: BuildCodexCommandInput = {}): CodexCommand {
-	if (!SAFE_EXECUTABLE.test(codexPath)) {
-		throw new Error("Unsafe codex executable path.");
-	}
+	assertSafeExecutablePath(codexPath, "codex executable path");
 
 	const args = [
 		"exec",

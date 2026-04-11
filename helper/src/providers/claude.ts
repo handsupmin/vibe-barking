@@ -21,10 +21,7 @@ export function createClaudeProvider({
 		id: "claude",
 		displayName,
 		configSummary() {
-			const missing = requiredEnv(env, [
-				"ANTHROPIC_API_KEY",
-				"ANTHROPIC_MODEL",
-			]);
+			const missing = requiredEnv(env, ["ANTHROPIC_API_KEY"]);
 			return {
 				provider: "claude",
 				displayName,
@@ -33,10 +30,15 @@ export function createClaudeProvider({
 				requiresCli: false,
 				envVars: ["ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"],
 			};
-		},
-		async validate(input) {
-			return validateClaude({ env, fetchFn, model: input?.model });
-		},
+			},
+			async validate(input) {
+				return validateClaude({
+					env,
+					fetchFn,
+					model: input?.model,
+					secret: input?.secret,
+				});
+			},
 		async generate(request) {
 			return generateClaude({ env, fetchFn, request });
 		},
@@ -47,13 +49,16 @@ async function validateClaude({
 	env,
 	fetchFn,
 	model,
+	secret,
 }: {
 	env: NodeJS.ProcessEnv;
 	fetchFn: typeof fetch;
 	model?: string;
+	secret?: string;
 }): Promise<ProviderValidationResult> {
 	const effectiveModel = model ?? env.ANTHROPIC_MODEL;
-	const missing = requiredEnv({ ...env, ANTHROPIC_MODEL: effectiveModel }, [
+	const apiKey = secret?.trim() || env.ANTHROPIC_API_KEY;
+	const missing = requiredEnv({ ...env, ANTHROPIC_API_KEY: apiKey, ANTHROPIC_MODEL: effectiveModel }, [
 		"ANTHROPIC_API_KEY",
 		"ANTHROPIC_MODEL",
 	]);
@@ -66,7 +71,6 @@ async function validateClaude({
 		};
 	}
 
-	const apiKey = env.ANTHROPIC_API_KEY;
 	if (!apiKey || !effectiveModel) {
 		return {
 			ok: false,
