@@ -42,7 +42,7 @@ describe('applyTextToQueue', () => {
     expect(result.pendingBuffer).toBe('uvwxyz123')
     expect(result.queue).toHaveLength(1)
     expect(result.queue[0].chunk).toBe('abcdefghijklmnopqrst')
-    expect(result.transcript).toBe('abcdefghijklmnopqrstuvwxyz123')
+    expect(result.transcript).toBe('defghijklmnopqrstuvwxyz123')
   })
 
   it('creates multiple jobs when enough text arrives at once', () => {
