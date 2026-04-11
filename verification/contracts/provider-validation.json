@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "description": "Provider validation contract and helper-side Codex policy requirements.",
+  "providers": [
+    {
+      "name": "openai",
+      "requiredAnyEnv": [
+        "OPENAI_API_KEY"
+      ]
+    },
+    {
+      "name": "gemini",
+      "requiredAnyEnv": [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY"
+      ]
+    },
+    {
+      "name": "claude",
+      "requiredAnyEnv": [
+        "ANTHROPIC_API_KEY"
+      ]
+    },
+    {
+      "name": "codex",
+      "requiredBinaryEnv": [
+        "CODEX_BIN",
+        "CODEX_CLI_PATH"
+      ],
+      "clientMayProvideCommand": false,
+      "notes": [
+        "Codex execution must stay helper-only.",
+        "Browser clients may choose the provider, but not an arbitrary shell command or argv."
+      ]
+    }
+  ]
+}
+

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "description": "Contract cases for the guarded input pipeline. Only letters and numbers across languages are accepted when no modifier key is active.",
+  "cases": [
+    {
+      "name": "accept latin letter",
+      "event": {
+        "key": "a",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": "a"
+    },
+    {
+      "name": "accept hangul letter",
+      "event": {
+        "key": "멍",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": "멍"
+    },
+    {
+      "name": "accept unicode digit",
+      "event": {
+        "key": "٤",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": "٤"
+    },
+    {
+      "name": "ignore functional key",
+      "event": {
+        "key": "Enter",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": ""
+    },
+    {
+      "name": "ignore punctuation",
+      "event": {
+        "key": "!",
+        "ctrlKey": false,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": ""
+    },
+    {
+      "name": "ignore modifier combo",
+      "event": {
+        "key": "a",
+        "ctrlKey": true,
+        "metaKey": false,
+        "altKey": false
+      },
+      "accepted": ""
+    }
+  ]
+}
+

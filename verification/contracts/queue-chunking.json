@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "Chunk accepted input into queued jobs of exactly 20 characters while preserving the trailing remainder.",
+  "cases": [
+    {
+      "name": "nineteen characters do not emit",
+      "input": "ABCDEFGHIJ123456789",
+      "expected": {
+        "emitted": [],
+        "remainder": "ABCDEFGHIJ123456789"
+      }
+    },
+    {
+      "name": "exactly twenty characters emit one job",
+      "input": "ABCDEFGHIJ1234567890",
+      "expected": {
+        "emitted": [
+          "ABCDEFGHIJ1234567890"
+        ],
+        "remainder": ""
+      }
+    },
+    {
+      "name": "twenty one characters keep one trailing remainder",
+      "input": "ABCDEFGHIJ1234567890Z",
+      "expected": {
+        "emitted": [
+          "ABCDEFGHIJ1234567890"
+        ],
+        "remainder": "Z"
+      }
+    },
+    {
+      "name": "forty characters emit two jobs",
+      "input": "1234567890ABCDEFGHIJabcdefghijKLMNOPQRST",
+      "expected": {
+        "emitted": [
+          "1234567890ABCDEFGHIJ",
+          "abcdefghijKLMNOPQRST"
+        ],
+        "remainder": ""
+      }
+    }
+  ]
+}
+

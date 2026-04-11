@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "description": "Preview isolation contract for generated browser output.",
+  "requiredSandboxTokens": [
+    "allow-scripts"
+  ],
+  "forbiddenSandboxTokens": [
+    "allow-same-origin",
+    "allow-top-navigation",
+    "allow-top-navigation-by-user-activation"
+  ],
+  "requirements": [
+    "Render generated output in a dedicated iframe or equivalent isolated browser container.",
+    "Do not inject generated markup directly into the application shell DOM.",
+    "Do not allow the preview to navigate the parent window."
+  ]
+}
