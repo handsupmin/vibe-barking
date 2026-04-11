@@ -53,7 +53,17 @@ const BLOCKED_KEYS = new Set([
 ])
 
 function isAllowedCharacter(character: string): boolean {
-  return !/[\u0000-\u001F\u007F-\u009F]/u.test(character)
+  const codePoint = character.codePointAt(0)
+
+  if (codePoint === undefined) {
+    return false
+  }
+
+  const isC0Control = codePoint >= 0x00 && codePoint <= 0x1f
+  const isDelete = codePoint === 0x7f
+  const isC1Control = codePoint >= 0x80 && codePoint <= 0x9f
+
+  return !(isC0Control || isDelete || isC1Control)
 }
 
 export function sanitizeBarkText(text: string): string {
