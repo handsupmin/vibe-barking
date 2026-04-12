@@ -5,6 +5,7 @@ import type {
   ProviderValidationResult,
   QueueDispatchRequest,
   QueueDispatchResponse,
+  SessionInitResponse,
 } from './contracts'
 
 async function readJsonSafe(response: Response): Promise<Record<string, unknown> | null> {
@@ -94,6 +95,26 @@ export async function clearBacklog(): Promise<boolean> {
     return response.ok
   } catch {
     return false
+  }
+}
+
+export async function initWorkspaceSession(sessionKey: string): Promise<SessionInitResponse | null> {
+  try {
+    const response = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionKey }),
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    return (await response.json()) as SessionInitResponse
+  } catch {
+    return null
   }
 }
 

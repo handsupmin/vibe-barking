@@ -89,6 +89,7 @@ export interface ProviderGenerationResult {
 
 export interface QueueEnqueueInput {
 	jobId?: string;
+	sessionKey?: string;
 	provider: ProviderId;
 	chunk: string;
 	category?: string;
@@ -97,6 +98,7 @@ export interface QueueEnqueueInput {
 
 export interface JobRecord {
 	id: string;
+	sessionKey: string;
 	provider: ProviderId;
 	chunk: string;
 	category: PromptCategory;
@@ -118,6 +120,7 @@ export interface JobRecord {
 
 export interface PublicJobRecord {
 	id: string;
+	sessionKey: string;
 	provider: ProviderId;
 	chunk: string;
 	category: PromptCategory;
@@ -138,6 +141,7 @@ export interface PublicJobRecord {
 
 export interface BacklogEntry {
 	id: string;
+	sessionKey: string;
 	provider: ProviderId;
 	chunk: string;
 	category: PromptCategory;
@@ -178,4 +182,10 @@ export interface ProviderGenerationRequest {
 	model?: string;
 	currentPreview?: PreviewDocument;
 	onProgressDelta?: (delta: string) => void;
+}
+
+export interface SessionRecord {
+	sessionKey: string;
+	previewUrl: string;
+	createdAt: string;
 }

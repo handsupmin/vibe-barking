@@ -29,6 +29,7 @@ export class BacklogStore {
 		const entries = this.readAll();
 		const nextEntry: BacklogEntry = {
 			id: job.id,
+			sessionKey: job.sessionKey,
 			provider: job.provider,
 			chunk: job.chunk,
 			category: job.category,

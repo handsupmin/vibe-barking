@@ -1,10 +1,12 @@
 import type { IncomingHttpHeaders } from "node:http";
+import { readFile } from "node:fs/promises";
 
 import { BacklogStore } from "./backlog/store.ts";
 import { loadHelperRuntimeEnv, persistProviderConfig } from "./config/env-store.ts";
 import { createProviders } from "./providers/index.ts";
 import type { ProviderAdapter } from "./providers/provider.ts";
 import { framePrompt } from "./prompts/frame-prompt.ts";
+import { SessionOutputStore } from "./session-output/store.ts";
 import { JobQueue } from "./queue/job-queue.ts";
 import {
 	type BuilderStage,
@@ -13,6 +15,7 @@ import {
 	type PreviewDocument,
 	type PublicJobRecord,
 	type QueueEnqueueInput,
+	type SessionRecord,
 	SUPPORTED_CATEGORIES,
 	SUPPORTED_PROVIDERS,
 } from "./types.ts";
@@ -39,17 +42,24 @@ export function createApp({
 		registry.map((provider) => [provider.id, provider]),
 	);
 	const backlogStore = new BacklogStore({ cwd });
-	let currentPreview = backlogStore.latestSuccessfulPreview();
+	const sessionStore = new SessionOutputStore({ cwd });
+	const currentPreviewBySession = new Map<string, PreviewDocument>();
 	const jobQueue =
 		queue ??
 		new JobQueue({
-			getCurrentPreview: () => currentPreview,
+			getCurrentPreview: (sessionKey) =>
+				currentPreviewBySession.get(sessionKey) ??
+				sessionStore.readPreview(sessionKey) ??
+				backlogStore.latestSuccessfulPreview(),
 			processJob: async (job, controls) => {
 				const provider = providerMap.get(job.provider);
 				if (!provider) {
 					throw new Error(`Unknown provider: ${job.provider}`);
 				}
 
+				const currentPreview =
+					currentPreviewBySession.get(job.sessionKey) ??
+					sessionStore.readPreview(job.sessionKey);
 				const prompt = framePrompt({
 					chunk: job.chunk,
 					category: job.category,
@@ -118,7 +128,8 @@ export function createApp({
 					),
 				});
 
-				currentPreview = result.preview;
+				currentPreviewBySession.set(job.sessionKey, result.preview);
+				await sessionStore.writePreview(job.sessionKey, result.preview);
 				controls.update({
 					stage: "applied",
 					stageLog: appendStageLog(
@@ -155,6 +166,24 @@ export function createApp({
 					categories: [...SUPPORTED_CATEGORIES],
 					providerIds: [...SUPPORTED_PROVIDERS],
 				});
+			}
+
+			if (request.method === "POST" && url.pathname === "/api/sessions") {
+				const body = await readJson<{ sessionKey?: string }>(request);
+				const session = await sessionStore.ensureSession(
+					body.sessionKey ??
+						`${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+				);
+				const preview =
+					currentPreviewBySession.get(session.sessionKey) ??
+					sessionStore.readPreview(session.sessionKey);
+				if (preview) {
+					currentPreviewBySession.set(session.sessionKey, preview);
+				}
+				return json(
+					session,
+					{ status: 201 },
+				);
 			}
 
 			if (
@@ -212,9 +241,13 @@ export function createApp({
 				) {
 					return json({ error: "Chunk is required." }, { status: 400 });
 				}
+				if (!body.sessionKey || typeof body.sessionKey !== "string") {
+					return json({ error: "Session key is required." }, { status: 400 });
+				}
 
 				const job = jobQueue.enqueue({
 					jobId: body.jobId,
+					sessionKey: body.sessionKey,
 					provider: providerId,
 					chunk: body.chunk,
 					category: body.category,
@@ -246,8 +279,38 @@ export function createApp({
 
 			if (request.method === "DELETE" && url.pathname === "/api/backlog") {
 				await backlogStore.clearAll();
-				currentPreview = backlogStore.latestSuccessfulPreview();
 				return json({ ok: true }, { status: 200 });
+			}
+
+			if (request.method === "GET" && /\/outputs\/[^/]+\/live\.html$/.test(url.pathname)) {
+				const sessionKey = decodeURIComponent(url.pathname.split("/")[2] ?? "");
+				const liveDocument = sessionStore.buildLiveDocument(sessionKey);
+				if (!liveDocument) {
+					return json({ error: "Output not found." }, { status: 404 });
+				}
+				return new Response(liveDocument, {
+					status: 200,
+					headers: {
+						"content-type": "text/html; charset=utf-8",
+						"cache-control": "no-store",
+						"access-control-allow-origin": "*",
+					},
+				});
+			}
+
+			if (request.method === "GET" && url.pathname.startsWith("/outputs/")) {
+				const resolved = sessionStore.resolveOutputFile(url.pathname);
+				if (!resolved) {
+					return json({ error: "Output not found." }, { status: 404 });
+				}
+				return new Response(await readFile(resolved.filePath), {
+					status: 200,
+					headers: {
+						"content-type": resolved.contentType,
+						"cache-control": "no-store",
+						"access-control-allow-origin": "*",
+					},
+				});
 			}
 
 			return json({ error: "Not found." }, { status: 404 });
@@ -301,6 +364,7 @@ function json(payload: unknown, init: ResponseInit = {}): Response {
 function toPublicJob(job: JobRecord): PublicJobRecord {
 	return {
 		id: job.id,
+		sessionKey: job.sessionKey,
 		provider: job.provider,
 		chunk: job.chunk,
 		category: job.category,

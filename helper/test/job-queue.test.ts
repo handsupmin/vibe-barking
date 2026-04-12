@@ -28,10 +28,12 @@ test("JobQueue processes jobs sequentially in enqueue order", async () => {
 	});
 
 	const first = queue.enqueue({
+		sessionKey: "session-a",
 		provider: "openai",
 		chunk: "aaaaaaaaaaaaaaaaaaaa",
 	});
 	const second = queue.enqueue({
+		sessionKey: "session-a",
 		provider: "claude",
 		chunk: "bbbbbbbbbbbbbbbbbbbb",
 	});

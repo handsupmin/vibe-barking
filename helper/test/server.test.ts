@@ -162,6 +162,7 @@ test("job enqueue accepts providerId contract from the frontend", async () => {
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
 				jobId: "frontend-job-1",
+				sessionKey: "session-1",
 				providerId: "openai",
 				chunk: "abcdefghijklmnopqrst",
 				model: "gpt-5.4-mini",
@@ -174,6 +175,48 @@ test("job enqueue accepts providerId contract from the frontend", async () => {
 	assert.equal(body.job.id, "frontend-job-1");
 	assert.equal(body.job.provider, "openai");
 	assert.equal(body.job.chunk, "abcdefghijklmnopqrst");
+});
+
+test("session init creates a stable output URL and serves default files", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "vibe-barking-session-"));
+	const provider: ProviderAdapter = {
+		id: "openai",
+		displayName: "OpenAI",
+		configSummary() {
+			return {
+				provider: "openai",
+				displayName: "OpenAI",
+				configured: true,
+				missing: [],
+				requiresCli: false,
+				envVars: ["OPENAI_API_KEY", "OPENAI_MODEL"],
+			};
+		},
+		async validate() {
+			return { ok: true, provider: "openai", message: "ready" };
+		},
+		async generate() {
+			throw new Error("not used");
+		},
+	};
+
+	const app = createApp({ providers: [provider], cwd });
+	const init = await app.fetch(
+		new Request("http://localhost/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sessionKey: "session-abc" }),
+		}),
+	);
+	const initBody = await init.json();
+	assert.equal(init.status, 201);
+	assert.equal(initBody.sessionKey, "session-abc");
+	assert.equal(initBody.previewUrl, "/outputs/session-abc/live.html");
+
+	const file = await app.fetch(new Request("http://localhost/outputs/session-abc/index.html"));
+	const html = await file.text();
+	assert.equal(file.status, 200);
+	assert.match(html, /Awaiting the next bark diff/i);
 });
 
 test("completed jobs leave the active queue and persist in backlog", async () => {
@@ -215,6 +258,7 @@ test("completed jobs leave the active queue and persist in backlog", async () =>
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({
+				sessionKey: "session-1",
 				providerId: "codex",
 				chunk: "ABCDEFGHIJKLMNOPQRST",
 				model: "gpt-5.4",

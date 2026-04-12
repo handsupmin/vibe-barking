@@ -30,11 +30,13 @@ export function createViteConfig(env: HelperProxyEnv): UserConfig {
     server: {
       proxy: {
         '/api': apiProxy,
+        '/outputs': apiProxy,
       },
     },
     preview: {
       proxy: {
         '/api': apiProxy,
+        '/outputs': apiProxy,
       },
     },
   }

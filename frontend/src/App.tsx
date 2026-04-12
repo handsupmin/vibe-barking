@@ -22,7 +22,7 @@ import {
   sanitizeBarkText,
   shouldDeferBeforeInputCapture,
 } from './lib/guardedInput'
-import { clearBacklog, dispatchQueuedJob, fetchBacklogPage, fetchHelperMeta, validateProvider } from './lib/helperClient'
+import { clearBacklog, dispatchQueuedJob, fetchBacklogPage, fetchHelperMeta, initWorkspaceSession, validateProvider } from './lib/helperClient'
 import { buildPreviewShell } from './lib/preview'
 import {
   applyValidatedProviderConnection,
@@ -46,6 +46,8 @@ interface SetupErrorState {
   providerId: ProviderId
   message: string
 }
+
+const SESSION_STORAGE_KEY = 'vibe-barking.session-key'
 
 const INITIAL_SESSION: SessionState = {
   pendingBuffer: '',
@@ -144,6 +146,21 @@ function humanizeCategory(category: PromptCategory): string {
     .split('-')
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ')
+}
+
+function getOrCreateBrowserSessionKey(): string {
+  if (typeof window === 'undefined') {
+    return `session-${Date.now()}`
+  }
+
+  const existing = window.sessionStorage.getItem(SESSION_STORAGE_KEY)
+  if (existing) {
+    return existing
+  }
+
+  const generated = `${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, generated)
+  return generated
 }
 
 interface ParsedProgressEnvelope {
@@ -255,6 +272,9 @@ function App() {
   const [displayedProgressText, setDisplayedProgressText] = useState('')
   const [lastEphemeralStreamText, setLastEphemeralStreamText] = useState('')
   const [dispatchingJobIds, setDispatchingJobIds] = useState<string[]>([])
+  const [sessionKey, setSessionKey] = useState<string>(() => getOrCreateBrowserSessionKey())
+  const [previewBaseUrl, setPreviewBaseUrl] = useState<string | null>(null)
+  const [resolvedPreviewHtml, setResolvedPreviewHtml] = useState<string | null>(null)
   const isMountedRef = useRef(true)
   const startedDispatchJobIdsRef = useRef<Set<string>>(new Set())
 
@@ -334,6 +354,8 @@ function App() {
           }),
     [activeProvider?.label, currentJob, hasMeaningfulPreview, helperMessage, livePhase, previewEntry, queueDepth, session.pendingBuffer.length],
   )
+  const previewVersion = latestSessionResolvedJob?.updatedAt ?? latestResolvedJob?.updatedAt ?? sessionKey
+  const previewUrl = previewBaseUrl ? `${previewBaseUrl}?v=${encodeURIComponent(previewVersion)}` : null
   const displayPreviewTitle = !isGenericPreviewLabel(previewEntry?.preview?.title)
     ? previewEntry?.preview?.title
     : currentJob
@@ -489,6 +511,27 @@ function App() {
   }, [helperOnline])
 
   useEffect(() => {
+    if (viewMode !== 'workspace') {
+      return
+    }
+
+    let cancelled = false
+
+    void initWorkspaceSession(sessionKey).then((session) => {
+      if (cancelled || !session) {
+        return
+      }
+
+      setSessionKey(session.sessionKey)
+      setPreviewBaseUrl(session.previewUrl)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionKey, viewMode])
+
+  useEffect(() => {
     if (!progressStreamSource) {
       return
     }
@@ -501,6 +544,40 @@ function App() {
       window.cancelAnimationFrame(frame)
     }
   }, [progressStreamSource])
+
+  useEffect(() => {
+    if (!previewUrl || currentJob) {
+      return
+    }
+
+    let cancelled = false
+    console.debug('[preview-fetch] start', previewUrl)
+
+    void fetch(previewUrl)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Preview load failed with status ${response.status}`)
+        }
+
+        return await response.text()
+      })
+      .then((html) => {
+        if (!cancelled) {
+          console.debug('[preview-fetch] success', html.slice(0, 80))
+          setResolvedPreviewHtml(html)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          console.debug('[preview-fetch] failed', previewUrl)
+          setResolvedPreviewHtml(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentJob, previewUrl])
 
 
   useEffect(() => {
@@ -536,6 +613,7 @@ function App() {
     }, 0)
 
     void dispatchQueuedJob({
+      sessionKey,
       providerId: queuedLocalJob.providerId,
       jobId: queuedLocalJob.id,
       chunk: queuedLocalJob.chunk,
@@ -553,6 +631,7 @@ function App() {
         setLatestSessionResolvedJob(null)
         setLatestSessionResolvedOutputText('')
         setLatestSessionRunContext({ providerId: queuedLocalJob.providerId, category: queuedLocalJob.category })
+        setResolvedPreviewHtml(null)
         setHelperMessage(response.message)
         setSession((current) => ({
           ...current,
@@ -590,7 +669,7 @@ function App() {
           ),
         }))
       })
-  }, [queuedLocalJob])
+  }, [queuedLocalJob, sessionKey])
 
   useEffect(() => {
     if (!activeRemoteJobSignature) {
@@ -1229,12 +1308,13 @@ function App() {
                     <div className="preview-chrome-status">{livePhase}</div>
                   </div>
                   <iframe
+                    key={previewUrl ?? previewDocument}
                     title="vibe-barking preview"
                     className="preview-frame preview-frame-large"
                     sandbox="allow-scripts"
                     referrerPolicy="no-referrer"
-                  srcDoc={previewDocument}
-                />
+                    srcDoc={resolvedPreviewHtml ?? previewDocument}
+                  />
               </section>
             </section>
           </main>

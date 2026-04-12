@@ -19,7 +19,7 @@ interface JobQueueOptions {
 		},
 	) => Promise<ProviderGenerationResult>;
 	onTerminalState?: (job: JobRecord) => Promise<void> | void;
-	getCurrentPreview?: () => PreviewDocument | undefined;
+	getCurrentPreview?: (sessionKey: string) => PreviewDocument | undefined;
 }
 
 export class JobQueue {
@@ -41,7 +41,11 @@ export class JobQueue {
 	enqueue(input: QueueEnqueueInput): JobRecord {
 		this.sequence += 1;
 		const now = new Date().toISOString();
-		const currentPreview = this.getCurrentPreview?.();
+		const sessionKey = input.sessionKey?.trim();
+		if (!sessionKey) {
+			throw new Error("Session key is required.");
+		}
+		const currentPreview = this.getCurrentPreview?.(sessionKey);
 		const prompt = framePrompt({
 			chunk: input.chunk,
 			category: input.category,
@@ -52,6 +56,7 @@ export class JobQueue {
 
 		const job: JobRecord = {
 			id: input.jobId?.trim() || randomUUID(),
+			sessionKey,
 			provider: input.provider,
 			chunk: input.chunk.trim(),
 			category: prompt.category,
@@ -118,7 +123,7 @@ export class JobQueue {
 					continue;
 				}
 
-				const currentPreview = this.getCurrentPreview?.();
+				const currentPreview = this.getCurrentPreview?.(current.sessionKey);
 				const processingState = this.updateJob(jobId, {
 					status: "processing",
 					stage: "ciphertext_interpreting",

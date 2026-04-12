@@ -96,11 +96,18 @@ export interface QueueJob {
 }
 
 export interface QueueDispatchRequest {
+  sessionKey: string
   providerId: ProviderId
   jobId: string
   chunk: string
   category: PromptCategory
   model?: string
+}
+
+export interface SessionInitResponse {
+  sessionKey: string
+  previewUrl: string
+  createdAt: string
 }
 
 export interface QueueDispatchResponse {
