@@ -1,4 +1,5 @@
 import type {
+  BacklogPageResponse,
   HelperMetaResponse,
   ProviderValidationRequest,
   ProviderValidationResult,
@@ -65,6 +66,34 @@ export async function fetchHelperMeta(): Promise<HelperMetaResponse | null> {
     return (await response.json()) as HelperMetaResponse
   } catch {
     return null
+  }
+}
+
+export async function fetchBacklogPage(
+  page = 1,
+  pageSize = 10,
+): Promise<BacklogPageResponse | null> {
+  try {
+    const response = await fetch(`/api/backlog?page=${page}&pageSize=${pageSize}`)
+    if (!response.ok) {
+      return null
+    }
+
+    return (await response.json()) as BacklogPageResponse
+  } catch {
+    return null
+  }
+}
+
+export async function clearBacklog(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/backlog', {
+      method: 'DELETE',
+    })
+
+    return response.ok
+  } catch {
+    return false
   }
 }
 

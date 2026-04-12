@@ -8,6 +8,16 @@ export interface KeyboardEventLike {
   isComposing?: boolean
 }
 
+export interface BeforeInputEventLike {
+  data?: string | null
+  inputType?: string
+  isComposing?: boolean
+}
+
+export function shouldDeferBeforeInputCapture(event: BeforeInputEventLike): boolean {
+  return Boolean(event.isComposing || event.inputType?.toLowerCase().includes('composition'))
+}
+
 export interface QueuedChunkLike {
   id: string
   chunk: string
@@ -108,7 +118,7 @@ export function applyTextToQueue<TQueueItem extends QueuedChunkLike>(
 
   while (combined.length >= CHUNK_SIZE) {
     appendedJobs.push({
-      id: `job-${existingCount + appendedJobs.length + 1}`,
+      id: createQueueJobId(existingCount + appendedJobs.length + 1),
       chunk: combined.slice(0, CHUNK_SIZE),
       createdAt: new Date().toISOString(),
       status: 'queued',
@@ -121,4 +131,12 @@ export function applyTextToQueue<TQueueItem extends QueuedChunkLike>(
     transcript: `${state.transcript}${sanitized}`,
     queue: [...state.queue, ...appendedJobs],
   }
+}
+
+function createQueueJobId(index: number): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return `job-${Date.now()}-${index}`
 }

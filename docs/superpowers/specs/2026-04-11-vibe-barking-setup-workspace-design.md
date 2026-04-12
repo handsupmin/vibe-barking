@@ -117,3 +117,66 @@ Behavior rules:
 - Server persistence or multi-user state.
 - Mobile-specific layout work.
 - Replacing the helper transport model with a hosted backend.
+
+
+## Approved extension — live response and backlog
+- Remove the `Latest summary` footer from the preview card.
+- Add a provider response rail that shows the full raw provider text for the current or most recent job.
+- Present the response with a typing/stream-style animation for “watching” and “waiting” value.
+- Show provider + job phase status beside the preview title (for example: request in flight, waiting for response, processing, completed, next request queued).
+- Keep the queue focused on active work only.
+- Move completed or failed jobs into a persistent local backlog.
+- Show only the 5 most recent backlog entries in the main workspace.
+- Open the full backlog in a modal with 10-item pagination.
+- Persist backlog locally in helper-owned storage rather than browser-only state.
+
+## Approved redesign direction — lovable/cursor style diff-first builder
+- The core loop remains `bark pad -> enqueue -> make diff -> apply -> complete program`.
+- The product is **not** a generic AI SaaS; it remains a dog-usable `vibe-barking` builder.
+- The right side should be dominated by a large live demo surface (roughly 70% width), similar to lovable/cursor preview-heavy layouts.
+- The left side should be stacked into three zones: progress/thinking stream, compact queue summary, bark pad.
+- The visual shell should feel like a **continuous dark work rail + dominant preview canvas**, not a dashboard of separate white cards.
+- The progress stream must combine:
+  - structured stage labels (`암호문 해석 중`, `작업 중`, `적용 중`, `적용 완료`)
+  - the provider's raw reasoning/output stream while work is in progress.
+- Waiting must feel active: users should be able to tell both **that work is ongoing** and **what the model is currently doing**.
+- Builder updates should be diff-oriented against the current app state, not full-regeneration oriented.
+- The provider contract should prefer `patch` output and only fall back to full snapshot output when patching is not viable.
+- Each bark ciphertext should be interpreted as the **next small implementation step**, not the entire application specification.
+- Prompt framing should explicitly instruct the model to preserve prior progress and propose/apply one coherent small change at a time.
+- Queue entries should represent incremental diff tasks; completed tasks should contribute to the evolving app state shown in the live demo.
+
+
+## Approved extension — progress visibility model
+- The left rail should combine **structured stage labels** and **raw reasoning stream** together, not one or the other.
+- Minimum visible stages:
+  - `암호문 해석 중`
+  - `작업 중`
+  - `적용 중`
+  - `적용 완료`
+- During `작업 중`, the UI should stream the provider's raw reasoning / worklog text so users can tell the system is genuinely active.
+- The product goal is not vague waiting; users should always be able to answer both:
+  - `Is it really working right now?`
+  - `What is it doing right now?`
+- The right side remains a large live demo (roughly 70% width) so users see the evolving app immediately.
+
+## Approved extension — reasoning retention policy
+- Raw reasoning text should be shown in real time only.
+- Persistent backlog should **not** store the full raw reasoning transcript.
+- Backlog should store only compact structured progress artifacts, such as:
+  - stage timeline
+  - patch/apply summary
+  - final output summary
+  - terminal success/failure state
+- This preserves the fun of live waiting without turning long-lived history into noisy transcript storage.
+
+## Implemented shell adjustments
+- The left rail is a continuous dark builder sidebar with:
+  - provider controls
+  - structured thinking stream
+  - compact queue summary
+  - bark composer
+- The right side uses a preview shell with lightweight chrome above the iframe so the live demo reads like an app canvas.
+- Active preview shell copy should reflect the **current job context** instead of generic placeholder labels.
+- During active jobs, stale backlog preview content must not override the current-session shell state.
+- Bark input must preserve IME composition flows so multilingual input (including Korean) works.

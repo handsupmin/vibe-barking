@@ -1,10 +1,16 @@
 import type { IncomingHttpHeaders } from "node:http";
+
+import { BacklogStore } from "./backlog/store.ts";
 import { loadHelperRuntimeEnv, persistProviderConfig } from "./config/env-store.ts";
 import { createProviders } from "./providers/index.ts";
 import type { ProviderAdapter } from "./providers/provider.ts";
+import { framePrompt } from "./prompts/frame-prompt.ts";
 import { JobQueue } from "./queue/job-queue.ts";
 import {
+	type BuilderStage,
+	type BuilderStageLogEntry,
 	type JobRecord,
+	type PreviewDocument,
 	type PublicJobRecord,
 	type QueueEnqueueInput,
 	SUPPORTED_CATEGORIES,
@@ -32,19 +38,100 @@ export function createApp({
 	const providerMap = new Map(
 		registry.map((provider) => [provider.id, provider]),
 	);
+	const backlogStore = new BacklogStore({ cwd });
+	let currentPreview = backlogStore.latestSuccessfulPreview();
 	const jobQueue =
 		queue ??
 		new JobQueue({
-			processJob: async (job) => {
+			getCurrentPreview: () => currentPreview,
+			processJob: async (job, controls) => {
 				const provider = providerMap.get(job.provider);
 				if (!provider) {
 					throw new Error(`Unknown provider: ${job.provider}`);
 				}
 
-				return provider.generate({
-					prompt: job.prompt,
-					model: job.model,
+				const prompt = framePrompt({
+					chunk: job.chunk,
+					category: job.category,
+					sequence: job.sequence,
+					currentPreviewSummary: currentPreview?.summary,
+					currentPreview,
 				});
+				controls.update({
+					prompt,
+					stage: "ciphertext_interpreting",
+					thinking: [
+						"암호문 해석 중 · bark chunk를 다음 작은 작업으로 변환하는 중.",
+					],
+					stageLog: appendStageLog(
+						controls.get()?.stageLog ?? [],
+						"ciphertext_interpreting",
+						"Interpreted the bark chunk as the next tiny implementation step.",
+					),
+				});
+
+				controls.update({
+					stage: "working",
+					thinking: [
+						"작업 중 · 현재 데모를 읽고 최소 diff를 준비하는 중.",
+						`작업 중 · ${provider.displayName}에게 작은 패치를 요청했어.`,
+					],
+					stageLog: appendStageLog(
+						controls.get()?.stageLog ?? [],
+						"working",
+						`Asked ${provider.displayName} for the next minimal diff.`,
+					),
+				});
+
+				const result = await provider.generate({
+					prompt,
+					model: job.model,
+					currentPreview,
+					onProgressDelta: (delta) => {
+						const currentStream = controls.get()?.streamText ?? "";
+						controls.update({ streamText: `${currentStream}${delta}` });
+					},
+				});
+
+				const providerThinking = result.envelope?.thinking?.length
+					? result.envelope.thinking
+					: [
+						result.resultMode === "patch"
+							? "Provider returned a structured patch payload."
+							: result.resultMode === "snapshot"
+								? "Provider returned a full snapshot fallback."
+								: "Provider returned raw browser output.",
+					];
+
+				controls.update({
+					stage: "applying",
+					thinking: providerThinking,
+					resultMode: result.resultMode,
+					stageLog: appendStageLog(
+						controls.get()?.stageLog ?? [],
+						"applying",
+						result.resultMode === "patch"
+							? "Applying the returned diff to the live demo."
+							: result.resultMode === "snapshot"
+								? "Replacing the live demo with the returned snapshot."
+								: "Using the provider output as a preview fallback.",
+					),
+				});
+
+				currentPreview = result.preview;
+				controls.update({
+					stage: "applied",
+					stageLog: appendStageLog(
+						controls.get()?.stageLog ?? [],
+						"applied",
+						"Applied the provider result and refreshed the live demo.",
+					),
+				});
+
+				return result;
+			},
+			onTerminalState: async (job) => {
+				await backlogStore.appendFromJob(job);
 			},
 		});
 
@@ -127,6 +214,7 @@ export function createApp({
 				}
 
 				const job = jobQueue.enqueue({
+					jobId: body.jobId,
 					provider: providerId,
 					chunk: body.chunk,
 					category: body.category,
@@ -137,7 +225,7 @@ export function createApp({
 			}
 
 			if (request.method === "GET" && url.pathname === "/api/jobs") {
-				return json({ jobs: jobQueue.list().map(toPublicJob) });
+				return json({ jobs: jobQueue.listActive().map(toPublicJob) });
 			}
 
 			if (request.method === "GET" && url.pathname.startsWith("/api/jobs/")) {
@@ -148,6 +236,18 @@ export function createApp({
 				}
 
 				return json({ job: toPublicJob(job) });
+			}
+
+			if (request.method === "GET" && url.pathname === "/api/backlog") {
+				const page = Number(url.searchParams.get("page") ?? "1");
+				const pageSize = Number(url.searchParams.get("pageSize") ?? "10");
+				return json(backlogStore.listPage({ page, pageSize }));
+			}
+
+			if (request.method === "DELETE" && url.pathname === "/api/backlog") {
+				await backlogStore.clearAll();
+				currentPreview = backlogStore.latestSuccessfulPreview();
+				return json({ ok: true }, { status: 200 });
 			}
 
 			return json({ error: "Not found." }, { status: 404 });
@@ -191,7 +291,7 @@ function json(payload: unknown, init: ResponseInit = {}): Response {
 	headers.set("content-type", "application/json; charset=utf-8");
 	headers.set("access-control-allow-origin", "*");
 	headers.set("access-control-allow-headers", "content-type");
-	headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+	headers.set("access-control-allow-methods", "GET,POST,OPTIONS,DELETE");
 	return new Response(JSON.stringify(payload), {
 		...init,
 		headers,
@@ -209,6 +309,11 @@ function toPublicJob(job: JobRecord): PublicJobRecord {
 		status: job.status,
 		createdAt: job.createdAt,
 		updatedAt: job.updatedAt,
+		stage: job.stage,
+		thinking: job.thinking,
+		stageLog: job.stageLog,
+		resultMode: job.resultMode,
+		streamText: job.streamText,
 		outputText: job.outputText,
 		preview: job.preview,
 		error: job.error,
@@ -236,4 +341,23 @@ function normalizeHeaders(headers: IncomingHttpHeaders): Headers {
 	}
 
 	return normalized;
+}
+
+function appendStageLog(
+	existing: BuilderStageLogEntry[],
+	stage: BuilderStage,
+	message: string,
+): BuilderStageLogEntry[] {
+	if (existing.some((entry) => entry.stage === stage && entry.message === message)) {
+		return existing;
+	}
+
+	return [
+		...existing,
+		{
+			stage,
+			message,
+			at: new Date().toISOString(),
+		},
+	];
 }

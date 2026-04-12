@@ -2,13 +2,24 @@ import { randomUUID } from "node:crypto";
 
 import { framePrompt } from "../prompts/frame-prompt.ts";
 import type {
+	BuilderStage,
+	BuilderStageLogEntry,
 	JobRecord,
+	PreviewDocument,
 	ProviderGenerationResult,
 	QueueEnqueueInput,
 } from "../types.ts";
 
 interface JobQueueOptions {
-	processJob: (job: JobRecord) => Promise<ProviderGenerationResult>;
+	processJob: (
+		job: JobRecord,
+		controls: {
+			update: (partial: Partial<JobRecord>) => JobRecord | undefined;
+			get: () => JobRecord | undefined;
+		},
+	) => Promise<ProviderGenerationResult>;
+	onTerminalState?: (job: JobRecord) => Promise<void> | void;
+	getCurrentPreview?: () => PreviewDocument | undefined;
 }
 
 export class JobQueue {
@@ -16,24 +27,31 @@ export class JobQueue {
 	private readonly queue: string[] = [];
 	private readonly idleWaiters: Array<() => void> = [];
 	private readonly processJob: JobQueueOptions["processJob"];
+	private readonly onTerminalState?: JobQueueOptions["onTerminalState"];
+	private readonly getCurrentPreview?: JobQueueOptions["getCurrentPreview"];
 	private sequence = 0;
 	private running = false;
 
-	constructor({ processJob }: JobQueueOptions) {
+	constructor({ processJob, onTerminalState, getCurrentPreview }: JobQueueOptions) {
 		this.processJob = processJob;
+		this.onTerminalState = onTerminalState;
+		this.getCurrentPreview = getCurrentPreview;
 	}
 
 	enqueue(input: QueueEnqueueInput): JobRecord {
 		this.sequence += 1;
 		const now = new Date().toISOString();
+		const currentPreview = this.getCurrentPreview?.();
 		const prompt = framePrompt({
 			chunk: input.chunk,
 			category: input.category,
 			sequence: this.sequence,
+			currentPreviewSummary: currentPreview?.summary,
+			currentPreview,
 		});
 
 		const job: JobRecord = {
-			id: randomUUID(),
+			id: input.jobId?.trim() || randomUUID(),
 			provider: input.provider,
 			chunk: input.chunk.trim(),
 			category: prompt.category,
@@ -43,6 +61,9 @@ export class JobQueue {
 			createdAt: now,
 			updatedAt: now,
 			prompt,
+			stage: "ciphertext_interpreting",
+			thinking: [],
+			stageLog: [this.createStageLogEntry("ciphertext_interpreting", "Queued the bark chunk for interpretation.", now)],
 		};
 
 		this.jobs.set(job.id, job);
@@ -55,6 +76,12 @@ export class JobQueue {
 	list(): JobRecord[] {
 		return [...this.jobs.values()].sort(
 			(left, right) => left.sequence - right.sequence,
+		);
+	}
+
+	listActive(): JobRecord[] {
+		return this.list().filter(
+			(job) => job.status !== "completed" && job.status !== "failed",
 		);
 	}
 
@@ -91,19 +118,27 @@ export class JobQueue {
 					continue;
 				}
 
-				this.jobs.set(jobId, {
-					...current,
+				const currentPreview = this.getCurrentPreview?.();
+				const processingState = this.updateJob(jobId, {
 					status: "processing",
-					updatedAt: new Date().toISOString(),
+					stage: "ciphertext_interpreting",
+					prompt: framePrompt({
+						chunk: current.chunk,
+						category: current.category,
+						sequence: current.sequence,
+						currentPreviewSummary: currentPreview?.summary,
+						currentPreview,
+					}),
 				});
+				if (!processingState) {
+					continue;
+				}
 
 				try {
-					const processingJob = this.jobs.get(jobId);
-					if (!processingJob) {
-						continue;
-					}
-
-					const result = await this.processJob(processingJob);
+					const result = await this.processJob(processingState, {
+						update: (partial) => this.updateJob(jobId, partial),
+						get: () => this.jobs.get(jobId),
+					});
 					const job = this.jobs.get(jobId);
 					if (!job) {
 						continue;
@@ -112,10 +147,16 @@ export class JobQueue {
 					this.jobs.set(jobId, {
 						...job,
 						status: "completed",
+						stage: "applied",
 						updatedAt: new Date().toISOString(),
+						streamText: job.streamText,
+						thinking: job.thinking,
+						stageLog: job.stageLog,
 						outputText: result.outputText,
 						preview: result.preview,
+						resultMode: result.resultMode,
 					});
+					await this.onTerminalState?.(this.jobs.get(jobId)!);
 				} catch (error) {
 					const job = this.jobs.get(jobId);
 					if (!job) {
@@ -128,6 +169,7 @@ export class JobQueue {
 						updatedAt: new Date().toISOString(),
 						error: error instanceof Error ? error.message : "Job failed.",
 					});
+					await this.onTerminalState?.(this.jobs.get(jobId)!);
 				}
 			}
 		} finally {
@@ -136,6 +178,33 @@ export class JobQueue {
 				this.resolveIdleWaiters();
 			}
 		}
+	}
+
+	private updateJob(jobId: string, partial: Partial<JobRecord>): JobRecord | undefined {
+		const current = this.jobs.get(jobId);
+		if (!current) {
+			return undefined;
+		}
+
+		const next = {
+			...current,
+			...partial,
+			updatedAt: new Date().toISOString(),
+		};
+		this.jobs.set(jobId, next);
+		return next;
+	}
+
+	private createStageLogEntry(
+		stage: BuilderStage,
+		message: string,
+		at = new Date().toISOString(),
+	): BuilderStageLogEntry {
+		return {
+			stage,
+			message,
+			at,
+		};
 	}
 
 	private resolveIdleWaiters(): void {

@@ -1,6 +1,8 @@
 export const CHUNK_SIZE = 20
 
 export type ProviderId = 'openai' | 'gemini' | 'claude' | 'claude-code' | 'codex'
+export const SUPPORTED_CATEGORIES = ['landing-page', 'dashboard', 'widget', 'playground'] as const
+export type PromptCategory = (typeof SUPPORTED_CATEGORIES)[number]
 export type ProviderHealth = 'idle' | 'validating' | 'ready' | 'error'
 export type QueueJobStatus =
   | 'queued'
@@ -9,6 +11,14 @@ export type QueueJobStatus =
   | 'waiting-for-helper'
   | 'completed'
   | 'failed'
+export type BuilderStage = 'ciphertext_interpreting' | 'working' | 'applying' | 'applied'
+export type BuilderResultMode = 'patch' | 'snapshot' | 'fallback'
+
+export interface BuilderStageLogEntry {
+  stage: BuilderStage
+  message: string
+  at: string
+}
 
 export interface ProviderDefinition {
   id: ProviderId
@@ -50,6 +60,14 @@ export interface ProviderMetaSummary {
   details?: Record<string, string | boolean | number | null>
 }
 
+export interface PreviewPayload {
+  title: string
+  summary: string
+  html: string
+  css: string
+  javascript: string
+}
+
 export interface HelperMetaResponse {
   providers: ProviderMetaSummary[]
   categories: string[]
@@ -61,10 +79,17 @@ export interface QueueJob {
   chunk: string
   createdAt: string
   providerId: ProviderId
+  category: PromptCategory
   model?: string
   status: QueueJobStatus
+  stage: BuilderStage
+  thinking: string[]
+  stageLog: BuilderStageLogEntry[]
+  resultMode?: BuilderResultMode
+  streamText?: string
   remoteJobId?: string
   resultSummary?: string
+  preview?: PreviewPayload
   previewHtml?: string
   helperMessage?: string
   error?: string
@@ -74,6 +99,7 @@ export interface QueueDispatchRequest {
   providerId: ProviderId
   jobId: string
   chunk: string
+  category: PromptCategory
   model?: string
 }
 
@@ -86,6 +112,33 @@ export interface QueueDispatchResponse {
   summary?: string
   previewHtml?: string
   message: string
+}
+
+export interface BacklogEntry {
+  id: string
+  provider: ProviderId
+  chunk: string
+  category: PromptCategory
+  model?: string
+  sequence: number
+  status: 'completed' | 'failed'
+  createdAt: string
+  updatedAt: string
+  completedAt: string
+  stage: BuilderStage
+  stageLog: BuilderStageLogEntry[]
+  resultMode?: BuilderResultMode
+  outputText?: string
+  preview?: PreviewPayload
+  error?: string
+}
+
+export interface BacklogPageResponse {
+  entries: BacklogEntry[]
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
 }
 
 export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [

@@ -32,6 +32,43 @@ export interface PromptFrame {
 	sequence: number;
 }
 
+export const BUILDER_STAGES = [
+	"ciphertext_interpreting",
+	"working",
+	"applying",
+	"applied",
+] as const;
+export type BuilderStage = (typeof BUILDER_STAGES)[number];
+export type BuilderResultMode = "patch" | "snapshot" | "fallback";
+
+export interface BuilderPatchOperation {
+	type: "replace_file";
+	path: string;
+	content: string;
+}
+
+export interface BuilderPatchPayload {
+	mode: "patch";
+	operations: BuilderPatchOperation[];
+}
+
+export interface BuilderSnapshotPayload {
+	mode: "snapshot";
+	snapshot: PreviewDocument;
+}
+
+export interface BuilderResponseEnvelope {
+	stage: BuilderStage;
+	thinking: string[];
+	result?: BuilderPatchPayload | BuilderSnapshotPayload;
+}
+
+export interface BuilderStageLogEntry {
+	stage: BuilderStage;
+	message: string;
+	at: string;
+}
+
 export interface PreviewDocument {
 	title: string;
 	summary: string;
@@ -43,9 +80,12 @@ export interface PreviewDocument {
 export interface ProviderGenerationResult {
 	outputText: string;
 	preview: PreviewDocument;
+	envelope?: BuilderResponseEnvelope;
+	resultMode?: BuilderResultMode;
 }
 
 export interface QueueEnqueueInput {
+	jobId?: string;
 	provider: ProviderId;
 	chunk: string;
 	category?: string;
@@ -63,6 +103,11 @@ export interface JobRecord {
 	createdAt: string;
 	updatedAt: string;
 	prompt: PromptFrame;
+	stage: BuilderStage;
+	thinking: string[];
+	stageLog: BuilderStageLogEntry[];
+	resultMode?: BuilderResultMode;
+	streamText?: string;
 	outputText?: string;
 	preview?: PreviewDocument;
 	error?: string;
@@ -78,6 +123,30 @@ export interface PublicJobRecord {
 	status: JobStatus;
 	createdAt: string;
 	updatedAt: string;
+	stage: BuilderStage;
+	thinking: string[];
+	stageLog: BuilderStageLogEntry[];
+	resultMode?: BuilderResultMode;
+	streamText?: string;
+	outputText?: string;
+	preview?: PreviewDocument;
+	error?: string;
+}
+
+export interface BacklogEntry {
+	id: string;
+	provider: ProviderId;
+	chunk: string;
+	category: PromptCategory;
+	model?: string;
+	sequence: number;
+	status: Extract<JobStatus, "completed" | "failed">;
+	createdAt: string;
+	updatedAt: string;
+	completedAt: string;
+	stage: BuilderStage;
+	stageLog: BuilderStageLogEntry[];
+	resultMode?: BuilderResultMode;
 	outputText?: string;
 	preview?: PreviewDocument;
 	error?: string;
@@ -104,4 +173,6 @@ export interface ProviderValidationResult {
 export interface ProviderGenerationRequest {
 	prompt: PromptFrame;
 	model?: string;
+	currentPreview?: PreviewDocument;
+	onProgressDelta?: (delta: string) => void;
 }

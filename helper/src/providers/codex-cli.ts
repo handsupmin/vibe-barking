@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { normalizePreviewDocument } from "../preview/normalize-preview.ts";
+import { materializePreviewResult } from "../preview/builder-preview.ts";
 import { buildCodexCommand } from "../security/codex-command-policy.ts";
 import type {
 	ProviderGenerationRequest,
@@ -71,6 +71,7 @@ async function validateCodex({
 			cwd,
 			codexPath: command?.trim() || env.CODEX_CLI_PATH || env.CODEX_BIN,
 			model: model ?? env.CODEX_MODEL,
+			timeoutMs: Number(env.CODEX_VALIDATE_TIMEOUT_MS ?? "30000"),
 		});
 
 		return {
@@ -101,16 +102,33 @@ async function generateCodex({
 	cwd: string;
 	request: ProviderGenerationRequest;
 }): Promise<ProviderGenerationResult> {
+	const subagentDirective = [
+		"<SUBAGENT-STOP>",
+		"You are dispatched as a bounded subagent for one artifact-generation task.",
+		"Do not use skills, MCP tools, shell commands, browser tools, file reads, or repository inspection.",
+		"Do not ask clarifying questions.",
+		"Return exactly one final answer and nothing else.",
+		"</SUBAGENT-STOP>",
+		"Return strict JSON only with keys: stage, thinking, result.",
+		"Prefer a patch result with replace_file operations for src/meta.json, src/index.html, src/styles.css, and src/app.js.",
+		"Only use snapshot fallback when patch mode is impossible.",
+		"Do not include markdown fences or any explanatory prose.",
+	].join("\n");
+
 	const outputText = await runCodexPrompt({
-		prompt: `${request.prompt.system}\n\n${request.prompt.user}`,
+		prompt: `${subagentDirective}\n\n${request.prompt.system}\n\n${request.prompt.user}`,
 		cwd,
 		codexPath: env.CODEX_CLI_PATH,
 		model: request.model ?? env.CODEX_MODEL,
+		timeoutMs: Number(env.CODEX_TIMEOUT_MS ?? "45000"),
 	});
 
+	const resolved = materializePreviewResult(outputText, request.currentPreview);
 	return {
 		outputText,
-		preview: normalizePreviewDocument(outputText),
+		preview: resolved.preview,
+		envelope: resolved.envelope,
+		resultMode: resolved.resultMode,
 	};
 }
 
@@ -119,11 +137,13 @@ async function runCodexPrompt({
 	cwd,
 	codexPath,
 	model,
+	timeoutMs,
 }: {
 	prompt: string;
 	cwd: string;
 	codexPath?: string;
 	model?: string;
+	timeoutMs: number;
 }): Promise<string> {
 	const tempDir = await mkdtemp(join(tmpdir(), "vibe-barking-codex-"));
 	const outputFile = join(tempDir, "last-message.txt");
@@ -141,12 +161,45 @@ async function runCodexPrompt({
 			});
 
 			let stderr = "";
+			let settled = false;
+			const timeoutId = setTimeout(() => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				child.kill("SIGTERM");
+				setTimeout(() => {
+					if (!child.killed) {
+						child.kill("SIGKILL");
+					}
+				}, 1000).unref();
+				reject(
+					new Error(
+						`Codex CLI timed out after ${timeoutMs}ms.`,
+					),
+				);
+			}, timeoutMs);
+
 			child.stderr.setEncoding("utf8");
 			child.stderr.on("data", (chunk) => {
 				stderr += chunk;
 			});
-			child.on("error", reject);
-			child.on("close", (code) => resolve({ code, stderr }));
+			child.on("error", (error) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timeoutId);
+				reject(error);
+			});
+			child.on("close", (code) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timeoutId);
+				resolve({ code, stderr });
+			});
 			child.stdin.end(prompt);
 		},
 	);

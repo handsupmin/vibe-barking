@@ -4,6 +4,7 @@ import {
   applyTextToQueue,
   isBlockedKeyboardEvent,
   sanitizeBarkText,
+  shouldDeferBeforeInputCapture,
 } from './guardedInput'
 
 describe('isBlockedKeyboardEvent', () => {
@@ -19,6 +20,14 @@ describe('isBlockedKeyboardEvent', () => {
     expect(isBlockedKeyboardEvent({ key: '7' })).toBe(false)
     expect(isBlockedKeyboardEvent({ key: '멍' })).toBe(false)
     expect(isBlockedKeyboardEvent({ key: 'Ж' })).toBe(false)
+  })
+})
+
+describe('shouldDeferBeforeInputCapture', () => {
+  it('defers composition-driven beforeinput events so IME can finish composing', () => {
+    expect(shouldDeferBeforeInputCapture({ isComposing: true, inputType: 'insertCompositionText' })).toBe(true)
+    expect(shouldDeferBeforeInputCapture({ inputType: 'insertFromComposition' })).toBe(true)
+    expect(shouldDeferBeforeInputCapture({ isComposing: false, inputType: 'insertText' })).toBe(false)
   })
 })
 

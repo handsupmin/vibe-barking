@@ -1,4 +1,4 @@
-import { normalizePreviewDocument } from "../preview/normalize-preview.ts";
+import { materializePreviewResult } from "../preview/builder-preview.ts";
 import type {
 	ProviderGenerationRequest,
 	ProviderGenerationResult,
@@ -161,9 +161,12 @@ async function generateOpenAI({
 	}
 
 	const outputText = extractOpenAIText(payload);
+	const resolved = materializePreviewResult(outputText, request.currentPreview);
 	return {
 		outputText,
-		preview: normalizePreviewDocument(outputText),
+		preview: resolved.preview,
+		envelope: resolved.envelope,
+		resultMode: resolved.resultMode,
 	};
 }
 

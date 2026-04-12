@@ -1,4 +1,7 @@
-import type { PreviewDocument } from "../types.ts";
+import type {
+	BuilderResponseEnvelope,
+	PreviewDocument,
+} from "../types.ts";
 
 interface PreviewPayload {
 	title?: unknown;
@@ -9,6 +12,11 @@ interface PreviewPayload {
 }
 
 export function normalizePreviewDocument(outputText: string): PreviewDocument {
+	const envelope = parseBuilderEnvelope(outputText);
+	if (envelope?.result?.mode === "snapshot") {
+		return envelope.result.snapshot;
+	}
+
 	const parsed = parsePreviewPayload(outputText);
 	if (parsed) {
 		return {
@@ -38,6 +46,29 @@ export function normalizePreviewDocument(outputText: string): PreviewDocument {
 		css: "body { font-family: Inter, system-ui, sans-serif; padding: 24px; color: #0d0d0d; } pre { white-space: pre-wrap; }",
 		javascript: "",
 	};
+}
+
+export function parseBuilderEnvelope(
+	outputText: string,
+): BuilderResponseEnvelope | null {
+	const rawCandidates = [
+		outputText.trim(),
+		extractFence(outputText, "json"),
+		extractLikelyJson(outputText),
+	].filter(Boolean) as string[];
+
+	for (const candidate of rawCandidates) {
+		try {
+			const parsed = JSON.parse(candidate) as BuilderResponseEnvelope;
+			if (typeof parsed === "object" && parsed !== null && "stage" in parsed) {
+				return parsed;
+			}
+		} catch {
+			// ignore parse failures and keep trying
+		}
+	}
+
+	return null;
 }
 
 function parsePreviewPayload(outputText: string): PreviewPayload | null {

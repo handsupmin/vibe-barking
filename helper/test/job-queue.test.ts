@@ -5,6 +5,7 @@ import { JobQueue } from "../src/queue/job-queue.ts";
 
 test("JobQueue processes jobs sequentially in enqueue order", async () => {
 	const seen: string[] = [];
+	const settled: string[] = [];
 	const queue = new JobQueue({
 		processJob: async (job) => {
 			seen.push(`start:${job.id}`);
@@ -20,6 +21,9 @@ test("JobQueue processes jobs sequentially in enqueue order", async () => {
 					javascript: "",
 				},
 			};
+		},
+		onTerminalState: (job) => {
+			settled.push(`${job.status}:${job.id}`);
 		},
 	});
 
@@ -40,6 +44,11 @@ test("JobQueue processes jobs sequentially in enqueue order", async () => {
 		`start:${second.id}`,
 		`finish:${second.id}`,
 	]);
+	assert.deepEqual(settled, [
+		`completed:${first.id}`,
+		`completed:${second.id}`,
+	]);
 	assert.equal(queue.get(first.id)?.status, "completed");
 	assert.equal(queue.get(second.id)?.status, "completed");
+	assert.equal(queue.listActive().length, 0);
 });

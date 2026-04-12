@@ -25,6 +25,7 @@ If you leave this unset, the frontend defaults to `http://127.0.0.1:4318` anyway
 ### 2) Helper environment
 
 The helper now **auto-loads `helper/.env.local`** on startup and UI-side provider validation writes back into that file for future launches.
+Completed and failed jobs also persist locally inside helper-owned backlog storage.
 
 Minimum optional helper host settings:
 
@@ -53,17 +54,22 @@ ANTHROPIC_MODEL=claude-sonnet-4-5
 CLAUDE_CODE_CLI_PATH=claude
 # or CLAUDE_CODE_BIN=/absolute/path/to/claude
 CLAUDE_CODE_MODEL=sonnet
+CLAUDE_CODE_VALIDATE_TIMEOUT_MS=15000
 
 # Codex CLI
 CODEX_CLI_PATH=codex
 # or CODEX_BIN=/full/path/to/codex
 CODEX_MODEL=gpt-5.4
+CODEX_TIMEOUT_MS=45000
+CODEX_VALIDATE_TIMEOUT_MS=30000
 ```
 
 Notes:
 - `OPENAI_MODEL`, `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `CLAUDE_CODE_MODEL`, and `CODEX_MODEL` are optional **if** you keep the frontend’s default model selections.
 - `CLAUDE_CODE_CLI_PATH` / `CLAUDE_CODE_BIN` is only needed if `claude` is not already on your `PATH`.
 - `CODEX_CLI_PATH` / `CODEX_BIN` is only needed if `codex` is not already on your `PATH`.
+- `CLAUDE_CODE_VALIDATE_TIMEOUT_MS` and `CODEX_VALIDATE_TIMEOUT_MS` keeps setup validation from spinning forever on slow CLI providers (Codex often needs more than 15s just to answer READY).
+- `CODEX_TIMEOUT_MS` lets you fail slow/stuck Codex jobs instead of letting one job block the queue forever.
 - Claude Code validation is helper-side only. If Claude Code is already authenticated on your machine, that may be enough; otherwise `ANTHROPIC_API_KEY` also helps for end-to-end validation.
 - Codex validation is helper-side only. If Codex CLI is already authenticated on your machine, that may be enough; otherwise `OPENAI_API_KEY` also helps for end-to-end validation.
 
@@ -101,6 +107,25 @@ npm run dev
 Then open the Vite URL, usually `http://127.0.0.1:5173`.
 
 Because `/api` is proxied to the helper, provider validation and queue dispatch should work in local dev without changing client code.
+
+## Workspace behavior
+
+- The initial screen is a setup gate. You must validate one provider before entering the workspace.
+- The main workspace now uses a **builder shell**:
+  - left: continuous dark work rail
+    - thinking stream
+    - compact active-queue summary
+    - bark composer
+  - right: large live preview shell
+- Provider output is shown as a **structured progress inspector** when it can be parsed:
+  - stage label
+  - thinking bullets
+  - patch operation cards
+  - expandable raw payload
+- Gemini uses helper-side streaming so the left rail can show live structured payload text while the job is running.
+- Completed and failed jobs move out of the active queue into a persistent backlog.
+- The workspace shows the most recent 5 backlog items; the full backlog opens in a modal with 10-item pagination.
+- The bark pad now preserves **IME/composition input** correctly, including Korean text.
 
 ## Fast verification
 
