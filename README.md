@@ -108,6 +108,16 @@ Then open the Vite URL, usually `http://127.0.0.1:5173`.
 
 Because `/api` is proxied to the helper, provider validation and queue dispatch should work in local dev without changing client code.
 
+## Supported categories
+
+- 캐주얼게임
+- 아케이드 게임
+- 디펜스게임
+- 보드게임
+- 유틸리티
+- 3D게임(threejs)
+- 세상에 없는 엄청난 무언가
+
 ## Workspace behavior
 
 - The initial screen is a setup gate. You must validate one provider before entering the workspace.

@@ -47,7 +47,7 @@ export function framePrompt({
 			"Use patch mode by default and replace only the files that need to change.",
 			"Always keep src/meta.json aligned with the visible experience whenever the title, summary, or product direction changes.",
 			"Never use placeholder metadata such as 'preview', 'summary', 'app', 'demo', or other generic labels when a more specific title/summary can be inferred.",
-			"Prefer concrete playground/dashboard/widget names that match the visible UI and current bark intent.",
+			"Prefer concrete category-aligned experiences that match the visible UI and current bark intent.",
 			"Return strict JSON with keys: stage, thinking, result.",
 			"Set `stage` to one of: ciphertext_interpreting, working, applying, applied.",
 			"`thinking` must be a short array of user-visible worklog strings for the live progress stream.",

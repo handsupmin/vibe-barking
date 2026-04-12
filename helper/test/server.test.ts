@@ -48,10 +48,13 @@ test("createApp exposes helper metadata without leaking secrets", async () => {
 	assert.equal(body.providers[0].configured, true);
 	assert.ok(!JSON.stringify(body).includes("OPENAI_API_KEY="));
 	assert.deepEqual(body.categories, [
-		"landing-page",
-		"dashboard",
-		"widget",
-		"playground",
+		"캐주얼게임",
+		"아케이드 게임",
+		"디펜스게임",
+		"보드게임",
+		"유틸리티",
+		"3D게임(threejs)",
+		"세상에 없는 엄청난 무언가",
 	]);
 });
 

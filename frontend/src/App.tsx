@@ -243,7 +243,7 @@ function App() {
   const [helperMessage, setHelperMessage] = useState(
     'Pick one interpreter, validate it, and then start barking into the pipeline.',
   )
-  const [selectedCategory, setSelectedCategory] = useState<PromptCategory>('playground')
+  const [selectedCategory, setSelectedCategory] = useState<PromptCategory>('캐주얼게임')
   const [lastBlockedKey, setLastBlockedKey] = useState<string | null>(null)
   const [isComposingBark, setIsComposingBark] = useState(false)
   const [compositionText, setCompositionText] = useState('')
@@ -256,6 +256,7 @@ function App() {
   const [lastEphemeralStreamText, setLastEphemeralStreamText] = useState('')
   const [dispatchingJobIds, setDispatchingJobIds] = useState<string[]>([])
   const isMountedRef = useRef(true)
+  const startedDispatchJobIdsRef = useRef<Set<string>>(new Set())
 
   const activeWorkspaceProviderId = activeProviderId ?? connectedProviderIds[0] ?? null
   const activeProvider = activeWorkspaceProviderId ? PROVIDER_MAP[activeWorkspaceProviderId] : null
@@ -266,15 +267,34 @@ function App() {
   const barkPadValue = session.transcript + compositionText
 
   const currentJob = useMemo(
-    () => [...session.jobs].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null,
+    () =>
+      [...session.jobs]
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        .find((job) => !TERMINAL_STATUSES.has(job.status)) ?? null,
     [session.jobs],
   )
-  const queuedLocalJob = useMemo(
+  const hasHelperDispatchInFlight = useMemo(
     () =>
-      session.jobs.find(
-        (job) => job.status === 'queued' && !job.helperMessage && !dispatchingJobIds.includes(job.id),
+      session.jobs.some(
+        (job) =>
+          dispatchingJobIds.includes(job.id) ||
+          (ACTIVE_STATUSES.has(job.status) &&
+            (job.status !== 'queued' || Boolean(job.helperMessage) || Boolean(job.remoteJobId))),
       ),
     [dispatchingJobIds, session.jobs],
+  )
+  const queuedLocalJob = useMemo(
+    () => {
+      if (hasHelperDispatchInFlight) {
+        return undefined
+      }
+
+      return (
+      session.jobs.find(
+        (job) => job.status === 'queued' && !job.helperMessage && !dispatchingJobIds.includes(job.id),
+      ))
+    },
+    [dispatchingJobIds, hasHelperDispatchInFlight, session.jobs],
   )
   const activeRemoteJobSignature = useMemo(
     () =>
@@ -411,6 +431,7 @@ function App() {
   }
 
   useEffect(() => {
+    isMountedRef.current = true
     let cancelled = false
 
     async function bootstrap() {
@@ -486,8 +507,12 @@ function App() {
     if (!queuedLocalJob) {
       return
     }
+    if (startedDispatchJobIdsRef.current.has(queuedLocalJob.id)) {
+      return
+    }
 
-    queueMicrotask(() => {
+    startedDispatchJobIdsRef.current.add(queuedLocalJob.id)
+    window.setTimeout(() => {
       if (!isMountedRef.current) {
         return
       }
@@ -495,13 +520,6 @@ function App() {
       setDispatchingJobIds((current) =>
         current.includes(queuedLocalJob.id) ? current : [...current, queuedLocalJob.id],
       )
-    })
-
-    queueMicrotask(() => {
-      if (!isMountedRef.current) {
-        return
-      }
-
       setSession((current) => ({
         ...current,
         jobs: current.jobs.map((job) =>
@@ -515,7 +533,7 @@ function App() {
             : job,
         ),
       }))
-    })
+    }, 0)
 
     void dispatchQueuedJob({
       providerId: queuedLocalJob.providerId,
@@ -529,6 +547,7 @@ function App() {
           return
         }
 
+        startedDispatchJobIdsRef.current.delete(queuedLocalJob.id)
         setDispatchingJobIds((current) => current.filter((jobId) => jobId !== queuedLocalJob.id))
         setLastEphemeralStreamText('')
         setLatestSessionResolvedJob(null)
@@ -550,6 +569,7 @@ function App() {
         }))
       })
       .catch((error) => {
+        startedDispatchJobIdsRef.current.delete(queuedLocalJob.id)
         if (!isMountedRef.current) {
           return
         }
@@ -566,7 +586,7 @@ function App() {
                   error: error instanceof Error ? error.message : 'Dispatch failed.',
                   helperMessage: error instanceof Error ? error.message : 'Dispatch failed.',
                 }
-              : job,
+            : job,
           ),
         }))
       })
@@ -780,7 +800,6 @@ function App() {
         providerId: activeWorkspaceProviderId,
         category: selectedCategory,
         model: activeDraft.model,
-        remoteJobId: job.id,
         stage: 'ciphertext_interpreting' as BuilderStage,
         thinking: [],
         stageLog: [],
@@ -789,7 +808,7 @@ function App() {
 
       return {
         pendingBuffer: next.pendingBuffer,
-        transcript: next.transcript,
+        transcript: next.pendingBuffer,
         jobs: [...current.jobs, ...appendedJobs],
       }
     })

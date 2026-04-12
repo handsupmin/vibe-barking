@@ -1,7 +1,7 @@
 export const CHUNK_SIZE = 20
 
 export type ProviderId = 'openai' | 'gemini' | 'claude' | 'claude-code' | 'codex'
-export const SUPPORTED_CATEGORIES = ['landing-page', 'dashboard', 'widget', 'playground'] as const
+export const SUPPORTED_CATEGORIES = ['캐주얼게임', '아케이드 게임', '디펜스게임', '보드게임', '유틸리티', '3D게임(threejs)', '세상에 없는 엄청난 무언가'] as const
 export type PromptCategory = (typeof SUPPORTED_CATEGORIES)[number]
 export type ProviderHealth = 'idle' | 'validating' | 'ready' | 'error'
 export type QueueJobStatus =

@@ -48,7 +48,7 @@ test('Gemini provider streams SSE deltas into progress callback and assembles fi
     prompt: {
       system: 'system',
       user: 'user',
-      category: 'playground',
+      category: '캐주얼게임',
       chunk: 'ABCDEFGHIJKLMNOPQRST',
       sequence: 1,
     },

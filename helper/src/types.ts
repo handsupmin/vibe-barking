@@ -8,13 +8,16 @@ export const SUPPORTED_PROVIDERS = [
 export type ProviderId = (typeof SUPPORTED_PROVIDERS)[number];
 
 export const SUPPORTED_CATEGORIES = [
-	"landing-page",
-	"dashboard",
-	"widget",
-	"playground",
+	"캐주얼게임",
+	"아케이드 게임",
+	"디펜스게임",
+	"보드게임",
+	"유틸리티",
+	"3D게임(threejs)",
+	"세상에 없는 엄청난 무언가",
 ] as const;
 export type PromptCategory = (typeof SUPPORTED_CATEGORIES)[number];
-export const DEFAULT_CATEGORY: PromptCategory = "playground";
+export const DEFAULT_CATEGORY: PromptCategory = "캐주얼게임";
 
 export const JOB_STATUSES = [
 	"queued",
