@@ -6,6 +6,7 @@ import {
 } from './contracts'
 
 const STORAGE_KEY = 'vibe-barking.workspace'
+const SESSION_VALIDATED_STORAGE_KEY = 'vibe-barking.session-validated-providers'
 
 export interface PersistedWorkspaceState {
   connectedProviderIds: ProviderId[]
@@ -35,14 +36,19 @@ export const EMPTY_WORKSPACE_STATE: PersistedWorkspaceState = {
 export function deriveWorkspaceBootstrap(
   providerSummaries: ProviderMetaSummary[],
   persisted: PersistedWorkspaceState = EMPTY_WORKSPACE_STATE,
+  sessionValidatedProviderIds: ProviderId[] = [],
 ): WorkspaceBootstrap {
   const configuredIds = PROVIDER_DEFINITIONS.map((provider) => provider.id).filter((providerId) =>
     providerSummaries.some((summary) => summary.provider === providerId && summary.configured),
   )
 
-  const connectedProviderIds = persisted.connectedProviderIds.filter((providerId) => configuredIds.includes(providerId))
+  const connectedProviderIds = persisted.connectedProviderIds.filter(
+    (providerId) => configuredIds.includes(providerId) && sessionValidatedProviderIds.includes(providerId),
+  )
 
-  const lastSuccessfulProviderId = configuredIds.includes(persisted.lastSuccessfulProviderId as ProviderId)
+  const lastSuccessfulProviderId =
+    configuredIds.includes(persisted.lastSuccessfulProviderId as ProviderId) &&
+    sessionValidatedProviderIds.includes(persisted.lastSuccessfulProviderId as ProviderId)
     ? (persisted.lastSuccessfulProviderId as ProviderId)
     : null
 
@@ -60,6 +66,42 @@ export function deriveWorkspaceBootstrap(
     setupProviderId: activeProviderId ?? configuredIds[0] ?? null,
     shouldEnterWorkspace: connectedProviderIds.length > 0,
   }
+}
+
+export function loadSessionValidatedProviders(): ProviderId[] {
+  if (typeof window === 'undefined') {
+    return []
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(SESSION_VALIDATED_STORAGE_KEY)
+    if (!rawValue) {
+      return []
+    }
+
+    const parsed = JSON.parse(rawValue) as unknown
+    return Array.isArray(parsed) ? parsed.filter(isProviderId) : []
+  } catch {
+    return []
+  }
+}
+
+export function persistSessionValidatedProvider(providerId: ProviderId): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const next = [...new Set([...loadSessionValidatedProviders(), providerId])]
+  window.sessionStorage.setItem(SESSION_VALIDATED_STORAGE_KEY, JSON.stringify(next))
+}
+
+export function clearSessionValidatedProvider(providerId: ProviderId): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const next = loadSessionValidatedProviders().filter((current) => current !== providerId)
+  window.sessionStorage.setItem(SESSION_VALIDATED_STORAGE_KEY, JSON.stringify(next))
 }
 
 export function loadPersistedWorkspaceState(): PersistedWorkspaceState {

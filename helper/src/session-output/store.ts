@@ -68,10 +68,11 @@ export class SessionOutputStore {
 
     try {
       const meta = JSON.parse(readFileSync(join(dir, 'meta.json'), 'utf8')) as Record<string, unknown>
+      const htmlDocument = readFileSync(join(dir, 'index.html'), 'utf8')
       return {
         title: typeof meta.title === 'string' ? meta.title : 'Vibe Barking Demo',
         summary: typeof meta.summary === 'string' ? meta.summary : 'The bark builder is waiting for the next tiny diff.',
-        html: readFileSync(join(dir, 'index.html'), 'utf8'),
+        html: extractBuilderHtml(htmlDocument),
         css: readFileSync(join(dir, 'styles.css'), 'utf8'),
         javascript: readFileSync(join(dir, 'app.js'), 'utf8'),
       }
@@ -109,6 +110,10 @@ export class SessionOutputStore {
     }
 
     return composePreviewDocument(preview)
+  }
+
+  getSessionDirectory(sessionKey: string): string {
+    return this.getSessionPath(sanitizeSessionKey(sessionKey))
   }
 
   private getSessionPath(sessionKey: string): string {
@@ -199,4 +204,20 @@ function composePreviewDocument(preview: PreviewDocument): string {
     <script>${preview.javascript}</script>
   </body>
 </html>`
+}
+
+function extractBuilderHtml(documentHtml: string): string {
+  const trimmed = documentHtml.trim()
+  if (!/<!doctype html>/i.test(trimmed) && !/<html[\s>]/i.test(trimmed)) {
+    return trimmed
+  }
+
+  const bodyMatch = trimmed.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
+  if (!bodyMatch) {
+    return trimmed
+  }
+
+  return (bodyMatch[1] ?? trimmed)
+    .replace(/<script[^>]+src=["']\.\/app\.js["'][^>]*><\/script>/gi, '')
+    .trim()
 }

@@ -182,6 +182,7 @@ export interface ProviderGenerationRequest {
 	model?: string;
 	currentPreview?: PreviewDocument;
 	onProgressDelta?: (delta: string) => void;
+	sessionOutputDir?: string;
 }
 
 export interface SessionRecord {

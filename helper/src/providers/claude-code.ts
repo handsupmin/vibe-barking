@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 import { materializePreviewResult } from "../preview/builder-preview.ts";
 import { buildClaudeCodeCommand } from "../security/claude-code-command-policy.ts";
+import { resolveCliFailureMessage } from "./cli-failure.ts";
 import type {
 	ProviderGenerationRequest,
 	ProviderGenerationResult,
@@ -115,7 +116,7 @@ async function generateClaudeCode({
 }): Promise<ProviderGenerationResult> {
 	const outputText = await runClaudeCodePrompt({
 		prompt: `${request.prompt.system}\n\n${request.prompt.user}`,
-		cwd,
+		cwd: request.sessionOutputDir ?? cwd,
 		claudePath: env.CLAUDE_CODE_CLI_PATH ?? env.CLAUDE_CODE_BIN,
 		model: request.model ?? env.CLAUDE_CODE_MODEL,
 		timeoutMs: Number(
@@ -261,8 +262,12 @@ async function runClaudeCodePrompt({
 
 	if (result.code !== 0) {
 		throw new Error(
-			result.stderr.trim() ||
-				`Claude Code CLI exited with code ${result.code}.`,
+			resolveCliFailureMessage({
+				stderr: result.stderr,
+				stdout: result.stdout,
+				exitCode: result.code,
+				commandLabel: "Claude Code CLI",
+			}),
 		);
 	}
 

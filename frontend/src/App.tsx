@@ -24,14 +24,20 @@ import {
 } from './lib/guardedInput'
 import { clearBacklog, dispatchQueuedJob, fetchBacklogPage, fetchHelperMeta, initWorkspaceSession, validateProvider } from './lib/helperClient'
 import { buildPreviewShell } from './lib/preview'
+import { isProviderSessionFatalError } from './lib/providerFailure'
 import {
   applyValidatedProviderConnection,
   buildConnectedProviderState,
+  clearSessionValidatedProvider,
   deriveWorkspaceBootstrap,
+  EMPTY_WORKSPACE_STATE,
   loadPersistedWorkspaceState,
+  loadSessionValidatedProviders,
   mergeProviderDraftsWithConnectedCommands,
+  persistSessionValidatedProvider,
   persistWorkspaceState,
 } from './lib/providerWorkspace'
+import { selectPreviewEntry } from './lib/previewState'
 
 type ViewMode = 'loading' | 'setup' | 'workspace'
 type SetupFlowMode = 'initial' | 'modal'
@@ -422,9 +428,12 @@ function App() {
     [session.jobs],
   )
   const queueDepth = session.jobs.length
-  const previewEntry = currentJob
-    ? latestSessionResolvedJob ?? null
-    : latestSessionResolvedJob ?? latestResolvedJob ?? recentBacklogEntries[0] ?? null
+  const previewEntry = selectPreviewEntry({
+    currentJob,
+    latestSessionResolvedJob,
+    latestResolvedJob,
+    recentBacklogEntries,
+  })
   const fallbackResolvedJob = latestSessionResolvedJob ?? latestResolvedJob
   const livePhase = deriveLivePhase(helperOnline, currentJob, latestSessionResolvedJob ?? latestResolvedJob)
   const hasMeaningfulPreview =
@@ -587,7 +596,7 @@ function App() {
     setProviderSummaries(summaryMap)
     setProviderDrafts((current) => mergeProviderDraftsWithConnectedCommands(current, meta.providers))
 
-    const bootstrapState = deriveWorkspaceBootstrap(meta.providers, loadPersistedWorkspaceState())
+    const bootstrapState = deriveWorkspaceBootstrap(meta.providers, loadPersistedWorkspaceState(), loadSessionValidatedProviders())
     const filteredConnectedProviderIds = bootstrapState.connectedProviderIds.filter(isUiProvider)
     const filteredActiveProviderId = isUiProvider(bootstrapState.activeProviderId)
       ? bootstrapState.activeProviderId
@@ -629,7 +638,7 @@ function App() {
         return
       }
 
-      const bootstrapState = deriveWorkspaceBootstrap(meta.providers, loadPersistedWorkspaceState())
+      const bootstrapState = deriveWorkspaceBootstrap(meta.providers, loadPersistedWorkspaceState(), loadSessionValidatedProviders())
       applyHelperMeta(meta)
       if (!bootstrapState.shouldEnterWorkspace) {
         setHelperMessage('Pick one interpreter and validate it before entering the workspace.')
@@ -759,10 +768,8 @@ function App() {
         startedDispatchJobIdsRef.current.delete(queuedLocalJob.id)
         setDispatchingJobIds((current) => current.filter((jobId) => jobId !== queuedLocalJob.id))
         setLastEphemeralStreamText('')
-        setLatestSessionResolvedJob(null)
         setLatestSessionResolvedOutputText('')
         setLatestSessionRunContext({ providerId: queuedLocalJob.providerId, category: queuedLocalJob.category })
-        setResolvedPreviewHtml(null)
         setIsPreviewRefreshing(false)
         setHelperMessage(response.message)
         setSession((current) => ({
@@ -895,6 +902,24 @@ function App() {
             : null,
         )
         await refreshBacklogViews()
+
+        if (latest.status === 'failed' && isProviderSessionFatalError(latest.error)) {
+          const remainingProviderIds = connectedProviderIds.filter((providerId) => providerId !== latest.provider)
+          clearSessionValidatedProvider(latest.provider)
+          setConnectedProviderIds(remainingProviderIds)
+          setActiveProviderId(remainingProviderIds[0] ?? null)
+          setSetupProviderId(latest.provider)
+          setSetupError({
+            providerId: latest.provider,
+            message: latest.error ?? `${PROVIDER_MAP[latest.provider].label} 인증을 다시 확인해줘.`,
+          })
+          persistWorkspaceState(
+            remainingProviderIds[0]
+              ? buildConnectedProviderState(remainingProviderIds, remainingProviderIds[0])
+              : EMPTY_WORKSPACE_STATE,
+          )
+          setViewMode('setup')
+        }
       }
     }
 
@@ -907,7 +932,7 @@ function App() {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [activeRemoteJobSignature, backlogPageNumber, isBacklogOpen, reserveNextPreviewRefreshNonce, session.jobs, triggerPreviewRefresh])
+  }, [activeRemoteJobSignature, backlogPageNumber, connectedProviderIds, isBacklogOpen, reserveNextPreviewRefreshNonce, session.jobs, triggerPreviewRefresh])
 
   useEffect(() => {
     if (!isBacklogOpen) {
@@ -1074,6 +1099,7 @@ function App() {
     setHelperMessage(result.message)
 
     if (!result.ok) {
+      clearSessionValidatedProvider(setupProviderId)
       setSetupError({ providerId: setupProviderId, message: result.message })
       setSetupProviderId(null)
       return
@@ -1094,6 +1120,7 @@ function App() {
 
     setConnectedProviderIds(connectionState.connectedProviderIds)
     setActiveProviderId(connectionState.activeProviderId)
+    persistSessionValidatedProvider(setupProviderId)
     persistWorkspaceState(
       buildConnectedProviderState(
         connectionState.connectedProviderIds,

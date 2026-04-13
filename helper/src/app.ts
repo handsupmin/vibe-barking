@@ -102,6 +102,7 @@ export function createApp({
 						const currentStream = controls.get()?.streamText ?? "";
 						controls.update({ streamText: `${currentStream}${delta}` });
 					},
+					sessionOutputDir: sessionStore.getSessionDirectory(job.sessionKey),
 				});
 				const persistedPreview = sessionStore.readPreview(job.sessionKey);
 				if (

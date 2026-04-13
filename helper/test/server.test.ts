@@ -219,6 +219,68 @@ test("session init creates a stable output URL and serves default files", async 
 	assert.match(html, /Awaiting the next bark diff/i);
 });
 
+test("job generation receives the concrete session output directory", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "vibe-barking-session-dir-"));
+	let seenSessionOutputDir: string | undefined;
+	const provider: ProviderAdapter = {
+		id: "codex",
+		displayName: "Codex CLI",
+		configSummary() {
+			return {
+				provider: "codex",
+				displayName: "Codex CLI",
+				configured: true,
+				missing: [],
+				requiresCli: true,
+				envVars: ["CODEX_CLI_PATH", "CODEX_MODEL"],
+			};
+		},
+		async validate() {
+			return { ok: true, provider: "codex", message: "ready" };
+		},
+		async generate(request) {
+			seenSessionOutputDir = request.sessionOutputDir;
+			return {
+				outputText: '{"stage":"applied","thinking":["ok"],"result":{"mode":"patch","operations":[]}}',
+				resultMode: "patch",
+				preview: {
+					title: "dir test",
+					summary: "dir test",
+					html: "<main>dir test</main>",
+					css: "",
+					javascript: "",
+				},
+			};
+		},
+	};
+
+	const app = createApp({ providers: [provider], cwd });
+	await app.fetch(
+		new Request("http://localhost/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sessionKey: "session-dir" }),
+		}),
+	);
+
+	await app.fetch(
+		new Request("http://localhost/api/jobs", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				sessionKey: "session-dir",
+				providerId: "codex",
+				chunk: "space-shooter-stagex",
+				model: "gpt-5.4",
+			}),
+		}),
+	);
+
+	await new Promise((resolve) => setTimeout(resolve, 25));
+
+	assert.equal(seenSessionOutputDir, join(cwd, "outputs", "session-dir"));
+});
+
 test("completed jobs persist the provider preview instead of reusing the default session scaffold", async () => {
 	const cwd = await mkdtemp(join(tmpdir(), "vibe-barking-session-preview-"));
 	const provider: ProviderAdapter = {

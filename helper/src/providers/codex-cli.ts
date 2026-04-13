@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { materializePreviewResult } from "../preview/builder-preview.ts";
 import { buildCodexCommand } from "../security/codex-command-policy.ts";
+import { resolveCliFailureMessage } from "./cli-failure.ts";
 import type {
 	ProviderGenerationRequest,
 	ProviderGenerationResult,
@@ -18,7 +19,7 @@ interface CodexCliProviderOptions {
 }
 
 const DEFAULT_CODEX_VALIDATE_TIMEOUT_MS = 60_000;
-const DEFAULT_CODEX_GENERATE_TIMEOUT_MS = 120_000;
+const DEFAULT_CODEX_GENERATE_TIMEOUT_MS = 180_000;
 
 export function createCodexCliProvider({
 	env = process.env,
@@ -122,7 +123,7 @@ async function generateCodex({
 
 	const outputText = await runCodexPrompt({
 		prompt: `${subagentDirective}\n\n${request.prompt.system}\n\n${request.prompt.user}`,
-		cwd,
+		cwd: request.sessionOutputDir ?? cwd,
 		codexPath: env.CODEX_CLI_PATH ?? env.CODEX_BIN,
 		model: request.model ?? env.CODEX_MODEL,
 		timeoutMs: Number(env.CODEX_TIMEOUT_MS ?? DEFAULT_CODEX_GENERATE_TIMEOUT_MS),
@@ -158,13 +159,14 @@ async function runCodexPrompt({
 		outputFile,
 	});
 
-	const result = await new Promise<{ code: number | null; stderr: string }>(
+	const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
 		(resolve, reject) => {
 			const child = spawn(command, args, {
 				cwd,
-				stdio: ["pipe", "ignore", "pipe"],
+				stdio: ["pipe", "pipe", "pipe"],
 			});
 
+			let stdout = "";
 			let stderr = "";
 			let settled = false;
 			const timeoutId = setTimeout(() => {
@@ -185,6 +187,10 @@ async function runCodexPrompt({
 				);
 			}, timeoutMs);
 
+			child.stdout.setEncoding("utf8");
+			child.stdout.on("data", (chunk) => {
+				stdout += chunk;
+			});
 			child.stderr.setEncoding("utf8");
 			child.stderr.on("data", (chunk) => {
 				stderr += chunk;
@@ -203,17 +209,30 @@ async function runCodexPrompt({
 				}
 				settled = true;
 				clearTimeout(timeoutId);
-				resolve({ code, stderr });
+				resolve({ code, stdout, stderr });
 			});
 			child.stdin.end(prompt);
 		},
 	);
 
+	let outputText = "";
 	try {
-		const outputText = (await readFile(outputFile, "utf8")).trim();
+		try {
+			outputText = (await readFile(outputFile, "utf8")).trim();
+		} catch (error) {
+			if (result.code === 0) {
+				throw error;
+			}
+		}
+
 		if (result.code !== 0) {
 			throw new Error(
-				result.stderr.trim() || `Codex CLI exited with code ${result.code}.`,
+				resolveCliFailureMessage({
+					stderr: result.stderr,
+					stdout: result.stdout || outputText,
+					exitCode: result.code,
+					commandLabel: "Codex CLI",
+				}),
 			);
 		}
 

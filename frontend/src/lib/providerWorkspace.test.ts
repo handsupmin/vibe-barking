@@ -37,6 +37,7 @@ describe('deriveWorkspaceBootstrap', () => {
         activeProviderId: 'codex',
         lastSuccessfulProviderId: 'codex',
       },
+      ['codex', 'gemini'],
     )
 
     expect(result.shouldEnterWorkspace).toBe(true)
@@ -52,6 +53,7 @@ describe('deriveWorkspaceBootstrap', () => {
         activeProviderId: 'openai',
         lastSuccessfulProviderId: 'gemini',
       },
+      ['gemini'],
     )
 
     expect(result.connectedProviderIds).toEqual(['gemini'])
@@ -68,6 +70,22 @@ describe('deriveWorkspaceBootstrap', () => {
     expect(result.shouldEnterWorkspace).toBe(false)
     expect(result.connectedProviderIds).toEqual([])
     expect(result.setupProviderId).toBe('gemini')
+  })
+
+  it('keeps the user in setup until this browser session validates the provider', () => {
+    const result = deriveWorkspaceBootstrap(
+      [configured('codex')],
+      {
+        connectedProviderIds: ['codex'],
+        activeProviderId: 'codex',
+        lastSuccessfulProviderId: 'codex',
+      },
+      [],
+    )
+
+    expect(result.shouldEnterWorkspace).toBe(false)
+    expect(result.connectedProviderIds).toEqual([])
+    expect(result.setupProviderId).toBe('codex')
   })
 })
 
