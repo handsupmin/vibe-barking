@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CompositionEvent, type FormEvent, type KeyboardEvent } from 'react'
 
 import './index.css'
 import {
@@ -48,6 +48,8 @@ interface SetupErrorState {
 }
 
 const SESSION_STORAGE_KEY = 'vibe-barking.session-key'
+const UI_PROVIDER_IDS: ProviderId[] = ['claude-code', 'codex']
+const UI_PROVIDER_DEFINITIONS = PROVIDER_DEFINITIONS.filter((provider) => UI_PROVIDER_IDS.includes(provider.id))
 
 const INITIAL_SESSION: SessionState = {
   pendingBuffer: '',
@@ -237,6 +239,94 @@ function summarizeOperationContent(content?: string): string {
   return cleaned.length > 96 ? `${cleaned.slice(0, 96)}…` : cleaned
 }
 
+function isUiProvider(providerId: ProviderId | null | undefined): providerId is ProviderId {
+  return Boolean(providerId && UI_PROVIDER_IDS.includes(providerId))
+}
+
+function reconcilePolledJobs(
+  currentJobs: QueueJob[],
+  helperJobs: Map<
+    string,
+    {
+      id: string
+      status: QueueJob['status']
+      stage: BuilderStage
+      thinking: string[]
+      stageLog: QueueJob['stageLog']
+      resultMode?: QueueJob['resultMode']
+      streamText?: string
+      outputText?: string
+      error?: string
+      createdAt: string
+      updatedAt: string
+      chunk: string
+      model?: string
+      category: PromptCategory
+      sequence: number
+      preview?: QueueJob['preview']
+    }
+  >,
+): { nextJobs: QueueJob[]; terminalEntries: BacklogEntry[]; terminalStreams: string[] } {
+  const terminalEntries: BacklogEntry[] = []
+  const terminalStreams: string[] = []
+  const nextJobs: QueueJob[] = []
+
+  for (const job of currentJobs) {
+    const helperJob = helperJobs.get(job.id)
+    if (!helperJob) {
+      nextJobs.push(job)
+      continue
+    }
+
+    const nextJob: QueueJob = {
+      ...job,
+      status: helperJob.status,
+      stage: helperJob.stage,
+      thinking: helperJob.thinking,
+      stageLog: helperJob.stageLog,
+      resultMode: helperJob.resultMode,
+      streamText: helperJob.streamText ?? job.streamText,
+      helperMessage:
+        helperJob.status === 'processing'
+          ? `${PROVIDER_MAP[job.providerId].label} ${stageLabel(helperJob.stage)}...`
+          : helperJob.error ?? `${PROVIDER_MAP[job.providerId].label} 작업 완료`,
+      resultSummary: helperJob.preview?.summary ?? job.resultSummary,
+      preview: helperJob.preview ?? job.preview,
+      previewHtml: helperJob.preview ? buildHtmlFromPreview(helperJob.preview) : job.previewHtml,
+      error: helperJob.error ?? job.error,
+    }
+
+    if (TERMINAL_STATUSES.has(nextJob.status)) {
+      terminalEntries.push({
+        id: helperJob.id,
+        provider: job.providerId,
+        chunk: helperJob.chunk,
+        category: helperJob.category,
+        model: helperJob.model,
+        sequence: helperJob.sequence,
+        status: nextJob.status === 'failed' ? 'failed' : 'completed',
+        createdAt: helperJob.createdAt,
+        updatedAt: helperJob.updatedAt,
+        completedAt: helperJob.updatedAt,
+        stage: helperJob.stage,
+        stageLog: helperJob.stageLog,
+        resultMode: helperJob.resultMode,
+        outputText: helperJob.outputText,
+        preview: helperJob.preview,
+        error: helperJob.error,
+      })
+      if (helperJob.outputText || helperJob.streamText) {
+        terminalStreams.push(helperJob.outputText ?? helperJob.streamText ?? '')
+      }
+      continue
+    }
+
+    nextJobs.push(nextJob)
+  }
+
+  return { nextJobs, terminalEntries, terminalStreams }
+}
+
 function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('loading')
   const [helperOnline, setHelperOnline] = useState(true)
@@ -275,8 +365,13 @@ function App() {
   const [sessionKey, setSessionKey] = useState<string>(() => getOrCreateBrowserSessionKey())
   const [previewBaseUrl, setPreviewBaseUrl] = useState<string | null>(null)
   const [resolvedPreviewHtml, setResolvedPreviewHtml] = useState<string | null>(null)
+  const [previewRefreshNonce, setPreviewRefreshNonce] = useState(0)
+  const [isPreviewRefreshing, setIsPreviewRefreshing] = useState(false)
   const isMountedRef = useRef(true)
   const startedDispatchJobIdsRef = useRef<Set<string>>(new Set())
+  const previewBaseUrlRef = useRef<string | null>(null)
+  const previewRefreshGateRef = useRef(false)
+  const previewRefreshNonceRef = useRef(0)
 
   const activeWorkspaceProviderId = activeProviderId ?? connectedProviderIds[0] ?? null
   const activeProvider = activeWorkspaceProviderId ? PROVIDER_MAP[activeWorkspaceProviderId] : null
@@ -295,13 +390,15 @@ function App() {
   )
   const hasHelperDispatchInFlight = useMemo(
     () =>
+      previewRefreshGateRef.current ||
+      isPreviewRefreshing ||
       session.jobs.some(
         (job) =>
           dispatchingJobIds.includes(job.id) ||
           (ACTIVE_STATUSES.has(job.status) &&
             (job.status !== 'queued' || Boolean(job.helperMessage) || Boolean(job.remoteJobId))),
       ),
-    [dispatchingJobIds, session.jobs],
+    [dispatchingJobIds, isPreviewRefreshing, session.jobs],
   )
   const queuedLocalJob = useMemo(
     () => {
@@ -354,7 +451,7 @@ function App() {
           }),
     [activeProvider?.label, currentJob, hasMeaningfulPreview, helperMessage, livePhase, previewEntry, queueDepth, session.pendingBuffer.length],
   )
-  const previewVersion = latestSessionResolvedJob?.updatedAt ?? latestResolvedJob?.updatedAt ?? sessionKey
+  const previewVersion = `${latestSessionResolvedJob?.updatedAt ?? latestResolvedJob?.updatedAt ?? sessionKey}-${previewRefreshNonce}`
   const previewUrl = previewBaseUrl ? `${previewBaseUrl}?v=${encodeURIComponent(previewVersion)}` : null
   const displayPreviewTitle = !isGenericPreviewLabel(previewEntry?.preview?.title)
     ? previewEntry?.preview?.title
@@ -424,6 +521,58 @@ function App() {
   }, [currentJob, helperMessage, lastEphemeralStreamText, latestResolvedJob, latestResolvedOutputText, latestSessionResolvedJob, latestSessionResolvedOutputText, previewEntry])
   const parsedProgressEnvelope = useMemo(() => tryParseProgressEnvelope(displayedProgressText), [displayedProgressText])
 
+  const loadResolvedPreviewHtml = useCallback(async (targetUrl: string | null) => {
+    if (!targetUrl) {
+      if (isMountedRef.current) {
+        setResolvedPreviewHtml(null)
+        setIsPreviewRefreshing(false)
+      }
+      return
+    }
+
+    if (isMountedRef.current) {
+      setIsPreviewRefreshing(true)
+    }
+
+    try {
+      const response = await fetch(targetUrl)
+      if (!response.ok) {
+        throw new Error(`Preview load failed with status ${response.status}`)
+      }
+      const html = await response.text()
+      if (isMountedRef.current) {
+        setResolvedPreviewHtml(html)
+      }
+    } catch {
+      if (isMountedRef.current) {
+        setResolvedPreviewHtml(null)
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsPreviewRefreshing(false)
+      }
+    }
+  }, [])
+
+  const triggerPreviewRefresh = useCallback(
+    async (targetUrl: string | null) => {
+      previewRefreshGateRef.current = Boolean(targetUrl)
+      try {
+        await loadResolvedPreviewHtml(targetUrl)
+      } finally {
+        previewRefreshGateRef.current = false
+      }
+    },
+    [loadResolvedPreviewHtml],
+  )
+
+  const reserveNextPreviewRefreshNonce = useCallback(() => {
+    const nextPreviewNonce = previewRefreshNonceRef.current + 1
+    previewRefreshNonceRef.current = nextPreviewNonce
+    setPreviewRefreshNonce(nextPreviewNonce)
+    return nextPreviewNonce
+  }, [])
+
 
   function applyHelperMeta(meta: NonNullable<Awaited<ReturnType<typeof fetchHelperMeta>>>) {
     setHelperOnline(true)
@@ -439,15 +588,23 @@ function App() {
     setProviderDrafts((current) => mergeProviderDraftsWithConnectedCommands(current, meta.providers))
 
     const bootstrapState = deriveWorkspaceBootstrap(meta.providers, loadPersistedWorkspaceState())
-    setConnectedProviderIds(bootstrapState.connectedProviderIds)
-    setActiveProviderId(bootstrapState.activeProviderId)
-    setSetupProviderId((current) => current ?? bootstrapState.setupProviderId)
+    const filteredConnectedProviderIds = bootstrapState.connectedProviderIds.filter(isUiProvider)
+    const filteredActiveProviderId = isUiProvider(bootstrapState.activeProviderId)
+      ? bootstrapState.activeProviderId
+      : filteredConnectedProviderIds[0] ?? null
+    const configuredUiProviders = meta.providers
+      .filter((summary) => isUiProvider(summary.provider) && summary.configured)
+      .map((summary) => summary.provider)
+
+    setConnectedProviderIds(filteredConnectedProviderIds)
+    setActiveProviderId(filteredActiveProviderId)
+    setSetupProviderId((current) => (isUiProvider(current) ? current : configuredUiProviders[0] ?? UI_PROVIDER_IDS[0] ?? null))
     setViewMode((current) =>
-      current === 'workspace' || bootstrapState.shouldEnterWorkspace ? 'workspace' : 'setup',
+      current === 'workspace' || filteredConnectedProviderIds.length > 0 ? 'workspace' : 'setup',
     )
     setHelperMessage((current) =>
-      bootstrapState.shouldEnterWorkspace && bootstrapState.activeProviderId
-        ? `${PROVIDER_MAP[bootstrapState.activeProviderId].label} is ready. Bark now and watch the diff loop evolve the live demo.`
+      filteredConnectedProviderIds.length > 0 && filteredActiveProviderId
+        ? `${PROVIDER_MAP[filteredActiveProviderId].label} is ready. Bark now and watch the diff loop evolve the live demo.`
         : current,
     )
   }
@@ -524,12 +681,13 @@ function App() {
 
       setSessionKey(session.sessionKey)
       setPreviewBaseUrl(session.previewUrl)
+      void triggerPreviewRefresh(session.previewUrl)
     })
 
     return () => {
       cancelled = true
     }
-  }, [sessionKey, viewMode])
+  }, [sessionKey, triggerPreviewRefresh, viewMode])
 
   useEffect(() => {
     if (!progressStreamSource) {
@@ -546,39 +704,12 @@ function App() {
   }, [progressStreamSource])
 
   useEffect(() => {
-    if (!previewUrl || currentJob) {
-      return
-    }
+    previewBaseUrlRef.current = previewBaseUrl
+  }, [previewBaseUrl])
 
-    let cancelled = false
-    console.debug('[preview-fetch] start', previewUrl)
-
-    void fetch(previewUrl)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Preview load failed with status ${response.status}`)
-        }
-
-        return await response.text()
-      })
-      .then((html) => {
-        if (!cancelled) {
-          console.debug('[preview-fetch] success', html.slice(0, 80))
-          setResolvedPreviewHtml(html)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          console.debug('[preview-fetch] failed', previewUrl)
-          setResolvedPreviewHtml(null)
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [currentJob, previewUrl])
-
+  useEffect(() => {
+    previewRefreshNonceRef.current = previewRefreshNonce
+  }, [previewRefreshNonce])
 
   useEffect(() => {
     if (!queuedLocalJob) {
@@ -632,6 +763,7 @@ function App() {
         setLatestSessionResolvedOutputText('')
         setLatestSessionRunContext({ providerId: queuedLocalJob.providerId, category: queuedLocalJob.category })
         setResolvedPreviewHtml(null)
+        setIsPreviewRefreshing(false)
         setHelperMessage(response.message)
         setSession((current) => ({
           ...current,
@@ -654,6 +786,7 @@ function App() {
         }
 
         setDispatchingJobIds((current) => current.filter((jobId) => jobId !== queuedLocalJob.id))
+        setIsPreviewRefreshing(false)
         setHelperMessage(error instanceof Error ? error.message : '요청 처리 중 오류가 발생했어.')
         setSession((current) => ({
           ...current,
@@ -738,75 +871,29 @@ function App() {
           .map((result) => [result.localJobId, result.payload.job!]),
       )
 
-      const terminalEntries: BacklogEntry[] = []
-      const terminalStreams: string[] = []
-
+      const reconciliation = reconcilePolledJobs(session.jobs, helperJobs)
       setSession((current) => ({
         ...current,
-        jobs: current.jobs.flatMap((job) => {
-          const helperJob = helperJobs.get(job.id)
-          if (!helperJob) {
-            return [job]
-          }
-
-          const nextJob: QueueJob = {
-            ...job,
-            status: helperJob.status,
-            stage: helperJob.stage,
-            thinking: helperJob.thinking,
-            stageLog: helperJob.stageLog,
-            resultMode: helperJob.resultMode,
-            streamText: helperJob.streamText ?? job.streamText,
-            helperMessage:
-              helperJob.status === 'processing'
-                ? `${PROVIDER_MAP[job.providerId].label} ${stageLabel(helperJob.stage)}...`
-                : helperJob.error ?? `${PROVIDER_MAP[job.providerId].label} 작업 완료`,
-            resultSummary: helperJob.preview?.summary ?? job.resultSummary,
-            preview: helperJob.preview ?? job.preview,
-            previewHtml: helperJob.preview ? buildHtmlFromPreview(helperJob.preview) : job.previewHtml,
-            error: helperJob.error ?? job.error,
-          }
-
-          if (TERMINAL_STATUSES.has(nextJob.status)) {
-            terminalEntries.push({
-              id: helperJob.id,
-              provider: job.providerId,
-              chunk: helperJob.chunk,
-              category: helperJob.category,
-              model: helperJob.model,
-              sequence: helperJob.sequence,
-              status: nextJob.status === 'failed' ? 'failed' : 'completed',
-              createdAt: helperJob.createdAt,
-              updatedAt: helperJob.updatedAt,
-              completedAt: helperJob.updatedAt,
-              stage: helperJob.stage,
-              stageLog: helperJob.stageLog,
-              resultMode: helperJob.resultMode,
-              outputText: helperJob.outputText,
-              preview: helperJob.preview,
-              error: helperJob.error,
-            })
-            if (helperJob.outputText || helperJob.streamText) {
-              terminalStreams.push(helperJob.outputText ?? helperJob.streamText ?? '')
-            }
-            return []
-          }
-
-          return [nextJob]
-        }),
+        jobs: reconcilePolledJobs(current.jobs, helperJobs).nextJobs,
       }))
 
-      if (terminalEntries.length > 0) {
-        const latest = [...terminalEntries].sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0]
+      if (reconciliation.terminalEntries.length > 0) {
+        const latest = [...reconciliation.terminalEntries].sort((left, right) => right.completedAt.localeCompare(left.completedAt))[0]
+        const nextPreviewNonce = reserveNextPreviewRefreshNonce()
         setLatestResolvedJob(latest)
         setLatestSessionResolvedJob(latest)
-        if (terminalStreams.length > 0) {
-          const latestStream = terminalStreams.at(-1) ?? ''
+        if (reconciliation.terminalStreams.length > 0) {
+          const latestStream = reconciliation.terminalStreams.at(-1) ?? ''
           setLastEphemeralStreamText(latestStream)
           setLatestResolvedOutputText(latestStream)
           setLatestSessionResolvedOutputText(latestStream)
         }
         setHelperMessage(latest.status === 'completed' ? `${PROVIDER_MAP[latest.provider].label} 적용 완료` : latest.error ?? '작업 실패')
+        await triggerPreviewRefresh(
+          previewBaseUrlRef.current
+            ? `${previewBaseUrlRef.current}?v=${encodeURIComponent(`${latest.updatedAt}-${nextPreviewNonce}`)}`
+            : null,
+        )
         await refreshBacklogViews()
       }
     }
@@ -820,7 +907,7 @@ function App() {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [activeRemoteJobSignature, backlogPageNumber, isBacklogOpen, session.jobs])
+  }, [activeRemoteJobSignature, backlogPageNumber, isBacklogOpen, reserveNextPreviewRefreshNonce, session.jobs, triggerPreviewRefresh])
 
   useEffect(() => {
     if (!isBacklogOpen) {
@@ -1043,6 +1130,16 @@ function App() {
     setSetupError(null)
   }
 
+  function handleManualPreviewRefresh() {
+    setHelperMessage('Live demo를 수동으로 새로고침하는 중...')
+    const nextPreviewNonce = reserveNextPreviewRefreshNonce()
+    void triggerPreviewRefresh(
+      previewBaseUrlRef.current
+        ? `${previewBaseUrlRef.current}?v=${encodeURIComponent(`${Date.now()}-${nextPreviewNonce}`)}`
+        : null,
+    )
+  }
+
   async function handleResetBacklog() {
     const confirmed = window.confirm('Backlog 전체 기록을 삭제할까? 이 작업은 되돌릴 수 없어.')
     if (!confirmed) {
@@ -1132,7 +1229,7 @@ function App() {
                 </div>
                 <div className="builder-rail-controls">
                   <div className="provider-switcher provider-switcher-rail" role="tablist" aria-label="Connected bark interpreters">
-                    {connectedProviderIds.map((providerId) => {
+                    {connectedProviderIds.filter(isUiProvider).map((providerId) => {
                       const provider = PROVIDER_MAP[providerId]
                       const active = providerId === activeProviderId
                       return (
@@ -1150,6 +1247,9 @@ function App() {
                   <div className="builder-rail-action-row">
                     <button type="button" className="rail-button" onClick={() => setIsBacklogOpen(true)}>
                       Backlog
+                    </button>
+                    <button type="button" className="rail-button" onClick={handleManualPreviewRefresh}>
+                      Refresh demo
                     </button>
                     <button type="button" className="rail-button" onClick={openAddProviderModal}>
                       + Add provider
@@ -1474,7 +1574,7 @@ function SetupSurface({
       ) : (
         <div className="setup-grid">
           <div className="setup-provider-list">
-            {PROVIDER_DEFINITIONS.map((provider) => {
+            {UI_PROVIDER_DEFINITIONS.map((provider) => {
               const selected = provider.id === selectedProviderId
               const summary = providerSummaries[provider.id]
               const alreadyConnected = connectedProviderIds.includes(provider.id)

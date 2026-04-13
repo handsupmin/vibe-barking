@@ -14,6 +14,9 @@ interface ClaudeCodeProviderOptions {
 	cwd?: string;
 }
 
+const DEFAULT_CLAUDE_CODE_VALIDATE_TIMEOUT_MS = 30_000;
+const DEFAULT_CLAUDE_CODE_GENERATE_TIMEOUT_MS = 120_000;
+
 export function createClaudeCodeProvider({
 	env = process.env,
 	cwd = process.cwd(),
@@ -74,7 +77,9 @@ async function validateClaudeCode({
 				command?.trim() || env.CLAUDE_CODE_CLI_PATH || env.CLAUDE_CODE_BIN,
 			model: model ?? env.CLAUDE_CODE_MODEL,
 			timeoutMs: Number(
-				env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ?? env.CLAUDE_CODE_TIMEOUT_MS ?? "15000",
+				env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ??
+					env.CLAUDE_CODE_TIMEOUT_MS ??
+					DEFAULT_CLAUDE_CODE_VALIDATE_TIMEOUT_MS,
 			),
 		});
 
@@ -114,7 +119,9 @@ async function generateClaudeCode({
 		claudePath: env.CLAUDE_CODE_CLI_PATH ?? env.CLAUDE_CODE_BIN,
 		model: request.model ?? env.CLAUDE_CODE_MODEL,
 		timeoutMs: Number(
-			env.CLAUDE_CODE_TIMEOUT_MS ?? env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ?? "45000",
+			env.CLAUDE_CODE_TIMEOUT_MS ??
+				env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ??
+				DEFAULT_CLAUDE_CODE_GENERATE_TIMEOUT_MS,
 		),
 		onProgressDelta: request.onProgressDelta,
 	});

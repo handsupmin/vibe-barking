@@ -219,6 +219,86 @@ test("session init creates a stable output URL and serves default files", async 
 	assert.match(html, /Awaiting the next bark diff/i);
 });
 
+test("completed jobs persist the provider preview instead of reusing the default session scaffold", async () => {
+	const cwd = await mkdtemp(join(tmpdir(), "vibe-barking-session-preview-"));
+	const provider: ProviderAdapter = {
+		id: "codex",
+		displayName: "Codex CLI",
+		configSummary() {
+			return {
+				provider: "codex",
+				displayName: "Codex CLI",
+				configured: true,
+				missing: [],
+				requiresCli: true,
+				envVars: ["CODEX_CLI_PATH", "CODEX_MODEL"],
+			};
+		},
+		async validate() {
+			return { ok: true, provider: "codex", message: "ready" };
+		},
+		async generate() {
+			return {
+				outputText:
+					'{"stage":"applied","thinking":["updated"],"result":{"mode":"patch","operations":[]}}',
+				resultMode: "patch",
+				preview: {
+					title: "Starbark: Stage X",
+					summary:
+						"A tiny browser shooter where you dodge, auto-fire, and clear the first Stage X enemy wave.",
+					html: "<main><h1>Starbark: Stage X</h1><p>Launch Run</p></main>",
+					css: "body { background: black; color: white; }",
+					javascript: 'document.body.dataset.mode = "stage-x";',
+				},
+			};
+		},
+	};
+
+	const app = createApp({ providers: [provider], cwd });
+	await app.fetch(
+		new Request("http://localhost/api/sessions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ sessionKey: "session-preview" }),
+		}),
+	);
+
+	await app.fetch(
+		new Request("http://localhost/api/jobs", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				sessionKey: "session-preview",
+				providerId: "codex",
+				chunk: "space-shooter-stagex",
+				model: "gpt-5.4",
+			}),
+		}),
+	);
+
+	await new Promise((resolve) => setTimeout(resolve, 25));
+
+	const backlog = await app.fetch(
+		new Request("http://localhost/api/backlog?page=1&pageSize=10"),
+	);
+	const backlogBody = await backlog.json();
+	assert.equal(backlogBody.total, 1);
+	assert.equal(backlogBody.entries[0].status, "completed");
+	assert.equal(backlogBody.entries[0].preview.title, "Starbark: Stage X");
+	assert.match(
+		backlogBody.entries[0].preview.summary,
+		/first Stage X enemy wave/i,
+	);
+
+	const live = await app.fetch(
+		new Request("http://localhost/outputs/session-preview/live.html"),
+	);
+	const liveHtml = await live.text();
+	assert.equal(live.status, 200);
+	assert.match(liveHtml, /Starbark: Stage X/);
+	assert.match(liveHtml, /Launch Run/);
+});
+
 test("completed jobs leave the active queue and persist in backlog", async () => {
 	const provider: ProviderAdapter = {
 		id: "codex",

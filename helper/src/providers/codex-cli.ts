@@ -17,6 +17,9 @@ interface CodexCliProviderOptions {
 	cwd?: string;
 }
 
+const DEFAULT_CODEX_VALIDATE_TIMEOUT_MS = 60_000;
+const DEFAULT_CODEX_GENERATE_TIMEOUT_MS = 120_000;
+
 export function createCodexCliProvider({
 	env = process.env,
 	cwd = process.cwd(),
@@ -34,7 +37,7 @@ export function createCodexCliProvider({
 				configured: typeof command === "string" && isSafeCodexPath(command),
 				missing: command ? [] : ["CODEX_CLI_PATH or CODEX_BIN"],
 				requiresCli: true,
-				envVars: ["CODEX_CLI_PATH", "CODEX_MODEL"],
+				envVars: ["CODEX_CLI_PATH", "CODEX_BIN", "CODEX_MODEL"],
 				details: {
 					command: command ?? null,
 				},
@@ -71,7 +74,9 @@ async function validateCodex({
 			cwd,
 			codexPath: command?.trim() || env.CODEX_CLI_PATH || env.CODEX_BIN,
 			model: model ?? env.CODEX_MODEL,
-			timeoutMs: Number(env.CODEX_VALIDATE_TIMEOUT_MS ?? "30000"),
+			timeoutMs: Number(
+				env.CODEX_VALIDATE_TIMEOUT_MS ?? DEFAULT_CODEX_VALIDATE_TIMEOUT_MS,
+			),
 		});
 
 		return {
@@ -118,9 +123,9 @@ async function generateCodex({
 	const outputText = await runCodexPrompt({
 		prompt: `${subagentDirective}\n\n${request.prompt.system}\n\n${request.prompt.user}`,
 		cwd,
-		codexPath: env.CODEX_CLI_PATH,
+		codexPath: env.CODEX_CLI_PATH ?? env.CODEX_BIN,
 		model: request.model ?? env.CODEX_MODEL,
-		timeoutMs: Number(env.CODEX_TIMEOUT_MS ?? "45000"),
+		timeoutMs: Number(env.CODEX_TIMEOUT_MS ?? DEFAULT_CODEX_GENERATE_TIMEOUT_MS),
 	});
 
 	const resolved = materializePreviewResult(outputText, request.currentPreview);

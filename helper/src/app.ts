@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { BacklogStore } from "./backlog/store.ts";
 import { loadHelperRuntimeEnv, persistProviderConfig } from "./config/env-store.ts";
+import { previewToBuilderFiles } from "./preview/builder-preview.ts";
 import { createProviders } from "./providers/index.ts";
 import type { ProviderAdapter } from "./providers/provider.ts";
 import { framePrompt } from "./prompts/frame-prompt.ts";
@@ -102,6 +103,13 @@ export function createApp({
 						controls.update({ streamText: `${currentStream}${delta}` });
 					},
 				});
+				const persistedPreview = sessionStore.readPreview(job.sessionKey);
+				if (
+					persistedPreview &&
+					!previewsMatch(persistedPreview, currentPreview)
+				) {
+					result.preview = persistedPreview;
+				}
 
 				const providerThinking = result.envelope?.thinking?.length
 					? result.envelope.thinking
@@ -424,4 +432,16 @@ function appendStageLog(
 			at: new Date().toISOString(),
 		},
 	];
+}
+
+function previewsMatch(
+	left: PreviewDocument | undefined,
+	right: PreviewDocument | undefined,
+): boolean {
+	const leftFiles = previewToBuilderFiles(left);
+	const rightFiles = previewToBuilderFiles(right);
+
+	return Object.entries(leftFiles).every(
+		([path, content]) => rightFiles[path] === content,
+	);
 }
