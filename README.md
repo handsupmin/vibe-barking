@@ -65,6 +65,7 @@ CODEX_VALIDATE_TIMEOUT_MS=30000
 ```
 
 Notes:
+
 - `OPENAI_MODEL`, `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `CLAUDE_CODE_MODEL`, and `CODEX_MODEL` are optional **if** you keep the frontend’s default model selections.
 - `CLAUDE_CODE_CLI_PATH` / `CLAUDE_CODE_BIN` is only needed if `claude` is not already on your `PATH`.
 - `CODEX_CLI_PATH` / `CODEX_BIN` is only needed if `codex` is not already on your `PATH`.
@@ -172,6 +173,7 @@ node scripts/generate-chaos-input.mjs --length 240 --seed 7
 ```
 
 Paste that into the bark pad and confirm:
+
 - every 20 accepted characters becomes one queue job
 - queue rows move through expected states
 - preview updates safely

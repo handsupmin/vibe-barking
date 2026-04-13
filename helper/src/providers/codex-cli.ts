@@ -19,7 +19,7 @@ interface CodexCliProviderOptions {
 }
 
 const DEFAULT_CODEX_VALIDATE_TIMEOUT_MS = 60_000;
-const DEFAULT_CODEX_GENERATE_TIMEOUT_MS = 180_000;
+const DEFAULT_CODEX_GENERATE_TIMEOUT_MS = 600_000;
 
 export function createCodexCliProvider({
 	env = process.env,
@@ -75,6 +75,7 @@ async function validateCodex({
 			cwd,
 			codexPath: command?.trim() || env.CODEX_CLI_PATH || env.CODEX_BIN,
 			model: model ?? env.CODEX_MODEL,
+			spawnEnv: env,
 			timeoutMs: Number(
 				env.CODEX_VALIDATE_TIMEOUT_MS ?? DEFAULT_CODEX_VALIDATE_TIMEOUT_MS,
 			),
@@ -126,6 +127,7 @@ async function generateCodex({
 		cwd: request.sessionOutputDir ?? cwd,
 		codexPath: env.CODEX_CLI_PATH ?? env.CODEX_BIN,
 		model: request.model ?? env.CODEX_MODEL,
+		spawnEnv: env,
 		timeoutMs: Number(env.CODEX_TIMEOUT_MS ?? DEFAULT_CODEX_GENERATE_TIMEOUT_MS),
 	});
 
@@ -143,12 +145,14 @@ async function runCodexPrompt({
 	cwd,
 	codexPath,
 	model,
+	spawnEnv,
 	timeoutMs,
 }: {
 	prompt: string;
 	cwd: string;
 	codexPath?: string;
 	model?: string;
+	spawnEnv?: NodeJS.ProcessEnv;
 	timeoutMs: number;
 }): Promise<string> {
 	const tempDir = await mkdtemp(join(tmpdir(), "vibe-barking-codex-"));
@@ -163,6 +167,7 @@ async function runCodexPrompt({
 		(resolve, reject) => {
 			const child = spawn(command, args, {
 				cwd,
+				env: spawnEnv,
 				stdio: ["pipe", "pipe", "pipe"],
 			});
 

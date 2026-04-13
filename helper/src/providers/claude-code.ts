@@ -16,7 +16,7 @@ interface ClaudeCodeProviderOptions {
 }
 
 const DEFAULT_CLAUDE_CODE_VALIDATE_TIMEOUT_MS = 30_000;
-const DEFAULT_CLAUDE_CODE_GENERATE_TIMEOUT_MS = 120_000;
+const DEFAULT_CLAUDE_CODE_GENERATE_TIMEOUT_MS = 600_000;
 
 export function createClaudeCodeProvider({
 	env = process.env,
@@ -77,6 +77,7 @@ async function validateClaudeCode({
 			claudePath:
 				command?.trim() || env.CLAUDE_CODE_CLI_PATH || env.CLAUDE_CODE_BIN,
 			model: model ?? env.CLAUDE_CODE_MODEL,
+			spawnEnv: env,
 			timeoutMs: Number(
 				env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ??
 					env.CLAUDE_CODE_TIMEOUT_MS ??
@@ -119,6 +120,7 @@ async function generateClaudeCode({
 		cwd: request.sessionOutputDir ?? cwd,
 		claudePath: env.CLAUDE_CODE_CLI_PATH ?? env.CLAUDE_CODE_BIN,
 		model: request.model ?? env.CLAUDE_CODE_MODEL,
+		spawnEnv: env,
 		timeoutMs: Number(
 			env.CLAUDE_CODE_TIMEOUT_MS ??
 				env.CLAUDE_CODE_VALIDATE_TIMEOUT_MS ??
@@ -141,6 +143,7 @@ async function runClaudeCodePrompt({
 	cwd,
 	claudePath,
 	model,
+	spawnEnv,
 	timeoutMs,
 	onProgressDelta,
 }: {
@@ -148,6 +151,7 @@ async function runClaudeCodePrompt({
 	cwd: string;
 	claudePath?: string;
 	model?: string;
+	spawnEnv?: NodeJS.ProcessEnv;
 	timeoutMs: number;
 	onProgressDelta?: (delta: string) => void;
 }): Promise<string> {
@@ -167,6 +171,7 @@ async function runClaudeCodePrompt({
 	}>((resolve, reject) => {
 		const child = spawn(command, args, {
 			cwd,
+			env: spawnEnv,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
